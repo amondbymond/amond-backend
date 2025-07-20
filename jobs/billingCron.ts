@@ -5,8 +5,12 @@ import { processMonthlyBilling, processExpiredMemberships } from "../services/bi
  * 정기결제 크론 작업 설정
  */
 export function initBillingCron() {
-  // 매일 오전 2시에 정기결제 처리
-  cron.schedule("0 2 * * *", async () => {
+  // TEST MODE: 매 5분마다 실행 (프로덕션에서는 "0 2 * * *"로 변경)
+  // Original: "0 2 * * *" = 매일 오전 2시
+  // Test: "*/5 * * * *" = 매 5분마다
+  const cronSchedule = process.env.BILLING_CRON_SCHEDULE || "0 2 * * *";
+  
+  cron.schedule(cronSchedule, async () => {
     console.log("[CRON] 정기결제 작업 시작 - " + new Date().toISOString());
     
     try {

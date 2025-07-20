@@ -963,4 +963,38 @@ router.post("/inicis/cancel-subscription", isLogin, async function (req, res) {
   }
 });
 
+/**
+ * 수동 정기결제 실행 (테스트용)
+ * POST /payment/test-billing
+ */
+router.post("/test-billing", isLogin, async function (req, res) {
+  try {
+    // 관리자만 실행 가능
+    if (req.user?.grade !== "A") {
+      return res.status(403).json({
+        success: false,
+        message: "관리자만 테스트 빌링을 실행할 수 있습니다."
+      });
+    }
+
+    console.log("[TEST] 수동 정기결제 테스트 시작");
+    
+    // billingCron에서 import
+    const { runBillingNow } = await import("../jobs/billingCron");
+    await runBillingNow();
+    
+    res.status(200).json({
+      success: true,
+      message: "테스트 정기결제가 실행되었습니다. 서버 로그를 확인하세요."
+    });
+  } catch (error) {
+    console.error("[TEST] 수동 정기결제 실패:", error);
+    res.status(500).json({
+      success: false,
+      message: "테스트 정기결제 실행 실패",
+      error: error.message
+    });
+  }
+});
+
 export default router;

@@ -40,6 +40,7 @@ jobs:
           INICIS_PROD_SIGN_KEY=${{ secrets.INICIS_PROD_SIGN_KEY }}
           INICIS_PROD_API_KEY=${{ secrets.INICIS_PROD_API_KEY }}
           INICIS_PROD_API_IV=${{ secrets.INICIS_PROD_API_IV }}
+          BILLING_CRON_SCHEDULE=${{ secrets.BILLING_CRON_SCHEDULE }}
           EOL
 
       - name: Setup Node.js
