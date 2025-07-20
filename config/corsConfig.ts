@@ -43,6 +43,10 @@ const corsOptions = {
 };
 
 export const setupCors = (app: express.Express) => {
+  // Enable pre-flight requests for all routes
+  app.options('*', cors(corsOptions));
+  
+  // Apply CORS to all routes
   app.use(cors(corsOptions));
 
   app.use(helmet.xssFilter());

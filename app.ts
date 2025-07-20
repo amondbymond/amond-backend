@@ -35,6 +35,17 @@ app.get("/", (req, res) => {
   res.status(200).send("OK");
 });
 
+// Debug endpoint to check CORS
+app.get("/cors-test", (req, res) => {
+  console.log("CORS Test - Origin:", req.headers.origin);
+  console.log("CORS Test - Headers:", req.headers);
+  res.json({ 
+    message: "CORS test endpoint",
+    origin: req.headers.origin,
+    timestamp: new Date().toISOString()
+  });
+});
+
 // 서버 실행
 http.createServer(app).listen(PORT, () => {
   console.log(`Server is running at port ${PORT}`);
