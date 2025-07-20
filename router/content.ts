@@ -796,7 +796,7 @@ async function checkLimitUpdate({
 router.post("/scrape-images", scrapeImagesController);
 
 // Brand summary generation endpoint
-router.post("/brand-summary", isLogin, async function (req, res) {
+router.post("/brand-summary", async function (req, res) {
   const userId = req.user?.id;
   const brandInput: BrandInput = req.body;
 
