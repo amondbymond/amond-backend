@@ -460,7 +460,13 @@ router.post("/inicis/save-billing-key", isLogin, async function (req, res) {
         const newGrade = 'pro';
         const membershipStartDate = new Date();
         const membershipEndDate = new Date();
-        membershipEndDate.setMonth(membershipEndDate.getMonth() + 1); // 1개월 후
+        
+        // TEST MODE: 2분 후 결제
+        membershipEndDate.setMinutes(membershipEndDate.getMinutes() + 2);
+        console.log("[TEST MODE] Next billing in 2 minutes:", membershipEndDate);
+        
+        // PRODUCTION MODE (나중에 주석 해제):
+        // membershipEndDate.setMonth(membershipEndDate.getMonth() + 1); // 1개월 후
 
         // 사용자 멤버십 업그레이드
         await queryAsync(

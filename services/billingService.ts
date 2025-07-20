@@ -38,6 +38,7 @@ export async function processMonthlyBilling() {
   
   try {
     // 결제가 필요한 활성 구독자 조회
+    // TEST MODE: NOW()를 사용하여 시간까지 비교
     const activeSubs = await queryAsync(`
       SELECT 
         ps.*,
@@ -45,13 +46,15 @@ export async function processMonthlyBilling() {
         bk.cardNumber,
         bk.cardName,
         u.email,
-        u.name
+        u.name,
+        TIMESTAMPDIFF(MINUTE, ps.startDate, NOW()) as minutesSinceStart
       FROM payment_subscriptions ps
       JOIN billing_keys bk ON ps.fk_userId = bk.fk_userId AND bk.status = 'active'
       JOIN user u ON ps.fk_userId = u.id
       WHERE ps.status = 'active'
-        AND ps.nextBillingDate <= CURDATE()
+        AND ps.nextBillingDate <= NOW()
         AND ps.planType = 'pro'
+        AND TIMESTAMPDIFF(MINUTE, ps.startDate, NOW()) <= 5  -- TEST: 가입 후 5분 이내만
     `);
 
     console.log(`[BillingService] 처리할 구독: ${activeSubs.length}건`);
