@@ -15,15 +15,14 @@ dotenv.config();
 const router = express.Router();
 import { isLogin } from "../module/needAuth";
 
-const failUrl =
-  process.env.NODE_ENV === "production"
-    ? "https://service.mond.io.kr/login"
-    : "http://localhost:3000/login";
+// Get the frontend URL from environment variable or use default
+const frontendUrl = process.env.FRONTEND_URL || 
+  (process.env.NODE_ENV === "production" 
+    ? "https://service.mond.io.kr" 
+    : "http://localhost:3000");
 
-const successUrl =
-  process.env.NODE_ENV === "production"
-    ? "https://service.mond.io.kr/login/success"
-    : "http://localhost:3000/login/success";
+const failUrl = `${frontendUrl}/login`;
+const successUrl = `${frontendUrl}/login/success`;
 
 // ㅇ 유저
 // 이메일 가입
