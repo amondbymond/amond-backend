@@ -3,23 +3,43 @@ import cors from "cors";
 import helmet from "helmet";
 
 const corsOptions = {
-  origin: [
-    "http://localhost:3000",
-    "http://localhost:3001",
-    "https://www.mond.io.kr",
-    "https://mond.io.kr",
-    "https://app.mond.io.kr",
-    "https://service.mond.io.kr",
-    // AWS Amplify domains
-    "https://main.dpvdj8dsmc7us.amplifyapp.com",
-    "https://dpvdj8dsmc7us.amplifyapp.com",
-    // INICIS 결제 도메인들
-    "https://stgstdpay.inicis.com",
-    "https://stdpay.inicis.com",
-    "https://mobile.inicis.com",
-    "https://stgmobile.inicis.com"
-  ],
+  origin: function (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) {
+    const allowedOrigins = [
+      "http://localhost:3000",
+      "http://localhost:3001",
+      "https://www.mond.io.kr",
+      "https://mond.io.kr",
+      "https://app.mond.io.kr",
+      "https://service.mond.io.kr",
+      // AWS Amplify domains
+      "https://main.dpvdj8dsmc7us.amplifyapp.com",
+      "https://dpvdj8dsmc7us.amplifyapp.com",
+      // INICIS 결제 도메인들
+      "https://stgstdpay.inicis.com",
+      "https://stdpay.inicis.com",
+      "https://mobile.inicis.com",
+      "https://stgmobile.inicis.com"
+    ];
+    
+    // Allow requests with no origin (like mobile apps or curl)
+    if (!origin) return callback(null, true);
+    
+    // Check exact match
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } 
+    // Check for Amplify wildcard domains
+    else if (origin.match(/^https:\/\/[a-z0-9-]+\.dpvdj8dsmc7us\.amplifyapp\.com$/)) {
+      callback(null, true);
+    } 
+    else {
+      console.log('CORS blocked origin:', origin);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
 };
 
 export const setupCors = (app: express.Express) => {

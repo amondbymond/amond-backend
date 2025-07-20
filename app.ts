@@ -12,8 +12,8 @@ import { initBillingCron } from "./jobs/billingCron";
 const PORT = 9988;
 const app = express();
 
+setupCors(app); // cors & Helmet 설정 - MUST be first!
 setupExpress(app); // express 설정 & rate limit
-setupCors(app); // cors & Helmet 설정
 setupSession(app); // cookie & session 설정
 initializePassport(app); // passport 초기화
 
