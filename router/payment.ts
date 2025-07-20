@@ -323,7 +323,8 @@ router.post("/inicis/issue-billing-key", async function (req, res) {
       }
     }
 
-    console.log("INICIS 빌링키 발급 응답 (파싱됨):", billingKeyResult);
+    // NEVER log sensitive payment data
+    console.log("INICIS 빌링키 발급 응답 - resultCode:", billingKeyResult.resultCode);
 
     // INICIS 응답 검증
     if (billingKeyResult.resultCode === "0000" || billingKeyResult.resultCode === "00") {
@@ -353,7 +354,7 @@ router.post("/inicis/issue-billing-key", async function (req, res) {
       });
     } else {
       // 실패 응답
-      console.error("INICIS 빌링키 발급 실패:", billingKeyResult);
+      console.error("INICIS 빌링키 발급 실패 - Code:", billingKeyResult.resultCode, "Message:", billingKeyResult.resultMsg);
       res.status(400).json({
         success: false,
         message: billingKeyResult.resultMsg || "빌링키 발급에 실패했습니다.",
