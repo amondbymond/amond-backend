@@ -30,7 +30,8 @@ export const setupSession = (app: express.Express) => {
         maxAge: 60 * 60 * 1000 * 24 * 30, // 30일
         httpOnly: true, // JavaScript를 통한 쿠키 접근 방지
         secure: process.env.NODE_ENV === "production" ? true : false, // HTTPS를 사용하는 경우에만 쿠키를 전송
-        sameSite: true, // CSRF 공격 방지
+        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax", // Cross-domain cookies
+        // Remove domain restriction to allow cross-domain cookies
       },
     })
   );
