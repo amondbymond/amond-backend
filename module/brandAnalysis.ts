@@ -127,7 +127,7 @@ class SmartBrandChatter {
                 {
                   type: "image_url",
                   image_url: {
-                    url: image.base64.startsWith('data:') ? image.base64 : `data:image/jpeg;base64,${image.base64}`,
+                    url: image.base64,
                     detail: "low"
                   }
                 }
