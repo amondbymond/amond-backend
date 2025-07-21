@@ -20,7 +20,30 @@ const imageUrlToBase64 = async (url: string): Promise<string> => {
             timeout: 10000
         });
         const buffer = Buffer.from(response.data, 'binary');
-        const contentType = response.headers['content-type'] || 'image/jpeg';
+        
+        // Detect image format from buffer if content-type is not provided
+        let contentType = response.headers['content-type'];
+        if (!contentType || contentType === 'application/octet-stream') {
+            // Check magic bytes to determine image format
+            const header = buffer.slice(0, 4);
+            if (header[0] === 0xFF && header[1] === 0xD8 && header[2] === 0xFF) {
+                contentType = 'image/jpeg';
+            } else if (header[0] === 0x89 && header[1] === 0x50 && header[2] === 0x4E && header[3] === 0x47) {
+                contentType = 'image/png';
+            } else if (header[0] === 0x47 && header[1] === 0x49 && header[2] === 0x46) {
+                contentType = 'image/gif';
+            } else if (header[0] === 0x52 && header[1] === 0x49 && header[2] === 0x46 && header[3] === 0x46) {
+                // WebP format starts with RIFF
+                const webpCheck = buffer.slice(8, 12);
+                if (webpCheck.toString('ascii') === 'WEBP') {
+                    contentType = 'image/webp';
+                }
+            } else {
+                // Default to JPEG if we can't determine
+                contentType = 'image/jpeg';
+            }
+        }
+        
         return `data:${contentType};base64,${buffer.toString('base64')}`;
     } catch (error) {
         console.error(`Failed to convert image URL to Base64: ${url}`, error);
