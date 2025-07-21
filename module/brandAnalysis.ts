@@ -117,6 +117,25 @@ class SmartBrandChatter {
       if (brandInput.selectedImages && brandInput.selectedImages.length > 0) {
         for (const image of brandInput.selectedImages.slice(0, 4)) {
           if (image.base64) {
+            // Debug: Check if base64 has data URL prefix
+            const hasDataPrefix = image.base64.startsWith('data:');
+            console.log(`🔍 DEBUG: Image ${image.fileName} - Has data prefix: ${hasDataPrefix}`);
+            
+            // If no data prefix, try to determine from filename
+            let imageUrl = image.base64;
+            if (!hasDataPrefix) {
+              const extension = image.fileName.toLowerCase().split('.').pop();
+              let mimeType = 'image/jpeg'; // default
+              
+              if (extension === 'png') mimeType = 'image/png';
+              else if (extension === 'gif') mimeType = 'image/gif';
+              else if (extension === 'webp') mimeType = 'image/webp';
+              else if (extension === 'jpg' || extension === 'jpeg') mimeType = 'image/jpeg';
+              
+              console.log(`⚠️ WARNING: Adding data prefix for ${image.fileName} with MIME type: ${mimeType}`);
+              imageUrl = `data:${mimeType};base64,${image.base64}`;
+            }
+            
             messages.push({
               role: "user",
               content: [
@@ -127,7 +146,7 @@ class SmartBrandChatter {
                 {
                   type: "image_url",
                   image_url: {
-                    url: image.base64,
+                    url: imageUrl,
                     detail: "low"
                   }
                 }
