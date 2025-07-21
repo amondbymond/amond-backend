@@ -23,7 +23,9 @@ const imageUrlToBase64 = async (url: string): Promise<string> => {
         
         // Detect image format from buffer if content-type is not provided
         let contentType = response.headers['content-type'];
-        if (!contentType || contentType === 'application/octet-stream') {
+        console.log(`🎨 Image from ${url} - Original content-type: ${contentType}`);
+        
+        if (!contentType || contentType === 'application/octet-stream' || !contentType.startsWith('image/')) {
             // Check magic bytes to determine image format
             const header = buffer.slice(0, 4);
             if (header[0] === 0xFF && header[1] === 0xD8 && header[2] === 0xFF) {

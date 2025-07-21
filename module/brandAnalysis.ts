@@ -121,6 +121,12 @@ class SmartBrandChatter {
             const hasDataPrefix = image.base64.startsWith('data:');
             console.log(`🔍 DEBUG: Image ${image.fileName} - Has data prefix: ${hasDataPrefix}`);
             
+            // Log the first 100 characters of the base64 to see the format
+            if (hasDataPrefix) {
+              const preview = image.base64.substring(0, 100);
+              console.log(`📊 DEBUG: Image ${image.fileName} - Data URL preview: ${preview}...`);
+            }
+            
             // If no data prefix, try to determine from filename
             let imageUrl = image.base64;
             if (!hasDataPrefix) {
