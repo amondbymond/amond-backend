@@ -21,32 +21,62 @@ const imageUrlToBase64 = async (url: string): Promise<string> => {
         });
         const buffer = Buffer.from(response.data, 'binary');
         
-        // Detect image format from buffer if content-type is not provided
-        let contentType = response.headers['content-type'];
-        console.log(`🎨 Image from ${url} - Original content-type: ${contentType}`);
+        // Log original content type for debugging
+        const originalContentType = response.headers['content-type'];
+        console.log(`🎨 Image from ${url} - Original content-type: ${originalContentType}`);
         
-        if (!contentType || contentType === 'application/octet-stream' || !contentType.startsWith('image/')) {
-            // Check magic bytes to determine image format
+        try {
+            // Try to load sharp dynamically (it might already be installed)
+            const sharp = require('sharp');
+            
+            // Convert any image format to PNG using sharp
+            const pngBuffer = await sharp(buffer)
+                .png()
+                .toBuffer();
+            
+            console.log(`✅ Converted image to PNG format from ${url}`);
+            return `data:image/png;base64,${pngBuffer.toString('base64')}`;
+            
+        } catch (sharpError) {
+            // If sharp is not available, fall back to original logic
+            console.log(`⚠️ Sharp not available, using original image format`);
+            
+            // Skip unsupported formats
+            if (originalContentType && !originalContentType.startsWith('image/')) {
+                console.log(`⚠️ Skipping non-image content: ${originalContentType} from ${url}`);
+                return '';
+            }
+            
+            // For .ico files and other unsupported formats
+            if (url.toLowerCase().endsWith('.ico') || 
+                (originalContentType && originalContentType.includes('icon'))) {
+                console.log(`⚠️ Skipping unsupported format: ${url}`);
+                return '';
+            }
+            
+            // Return original if it's a supported format
+            const supportedTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp'];
+            if (originalContentType && supportedTypes.includes(originalContentType)) {
+                return `data:${originalContentType};base64,${buffer.toString('base64')}`;
+            }
+            
+            // Try to detect format from magic bytes
             const header = buffer.slice(0, 4);
-            if (header[0] === 0xFF && header[1] === 0xD8 && header[2] === 0xFF) {
-                contentType = 'image/jpeg';
-            } else if (header[0] === 0x89 && header[1] === 0x50 && header[2] === 0x4E && header[3] === 0x47) {
-                contentType = 'image/png';
+            let detectedType = 'image/jpeg'; // default
+            
+            if (header[0] === 0x89 && header[1] === 0x50 && header[2] === 0x4E && header[3] === 0x47) {
+                detectedType = 'image/png';
             } else if (header[0] === 0x47 && header[1] === 0x49 && header[2] === 0x46) {
-                contentType = 'image/gif';
+                detectedType = 'image/gif';
             } else if (header[0] === 0x52 && header[1] === 0x49 && header[2] === 0x46 && header[3] === 0x46) {
-                // WebP format starts with RIFF
                 const webpCheck = buffer.slice(8, 12);
                 if (webpCheck.toString('ascii') === 'WEBP') {
-                    contentType = 'image/webp';
+                    detectedType = 'image/webp';
                 }
-            } else {
-                // Default to JPEG if we can't determine
-                contentType = 'image/jpeg';
             }
+            
+            return `data:${detectedType};base64,${buffer.toString('base64')}`;
         }
-        
-        return `data:${contentType};base64,${buffer.toString('base64')}`;
     } catch (error) {
         console.error(`Failed to convert image URL to Base64: ${url}`, error);
         return ''; 
@@ -225,11 +255,11 @@ const handleGeneralWebsite = async (url: string): Promise<string[]> => {
             }
         } catch (e) { /* ignore if not found */ }
 
-        // Get Favicon
-        try {
-            const favicon = await page.$eval('link[rel="icon"], link[rel="shortcut icon"], link[rel="apple-touch-icon"]', el => (el as HTMLLinkElement).href);
-            if (favicon) logoAndBrandingImages.add(resolveUrl(favicon, url));
-        } catch (e) { /* ignore if not found */ }
+        // Skip favicon as it's usually .ico format which OpenAI doesn't support
+        // try {
+        //     const favicon = await page.$eval('link[rel="icon"], link[rel="shortcut icon"], link[rel="apple-touch-icon"]', el => (el as HTMLLinkElement).href);
+        //     if (favicon) logoAndBrandingImages.add(resolveUrl(favicon, url));
+        // } catch (e) { /* ignore if not found */ }
 
         // Get Logo
         try {
