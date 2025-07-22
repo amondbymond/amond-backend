@@ -4,6 +4,7 @@ import axios from 'axios';
 import { URL } from 'url';
 import { spawn } from 'child_process';
 import path from 'path';
+import { isValidImageUrl } from '../utils/urlValidator';
 
 // --- CONFIGURATION ---
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY || 'PASTE_YOUR_YOUTUBE_API_KEY_HERE';
@@ -15,6 +16,12 @@ const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY || 'PASTE_YOUR_YOUTUBE_API_K
  */
 const imageUrlToBase64 = async (url: string): Promise<string> => {
     try {
+        // Validate URL before attempting to fetch
+        if (!isValidImageUrl(url)) {
+            console.error(`Invalid or incomplete image URL: ${url}`);
+            return '';
+        }
+        
         const response = await axios.get(url, {
             responseType: 'arraybuffer',
             timeout: 10000
@@ -494,9 +501,12 @@ console.log('Environment check:', {
             
             finalImages = imageUrls.filter(img => img.length > 0);
         } else {
+            // Filter out invalid URLs before attempting to convert
+            const validUrls = imageUrls.filter(url => isValidImageUrl(url));
+            console.log(`Filtered ${imageUrls.length - validUrls.length} invalid URLs`);
             
             const base64Images = await Promise.all(
-                imageUrls.map(imageUrlToBase64)
+                validUrls.map(imageUrlToBase64)
             );
             finalImages = base64Images.filter(b64 => b64.length > 0);
         }
