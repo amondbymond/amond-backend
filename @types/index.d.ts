@@ -17,4 +17,5 @@ declare global {
 
 export type ReqUser = {
   id: number;
+  grade?: string;
 };

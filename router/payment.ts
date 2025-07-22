@@ -999,7 +999,7 @@ router.post("/test-billing", isLogin, async function (req, res) {
     res.status(500).json({
       success: false,
       message: "테스트 정기결제 실행 실패",
-      error: error.message
+      error: error instanceof Error ? error.message : "Unknown error"
     });
   }
 });

@@ -46,7 +46,6 @@ export async function processMonthlyBilling() {
         bk.cardNumber,
         bk.cardName,
         u.email,
-        u.name,
         TIMESTAMPDIFF(MINUTE, ps.startDate, NOW()) as minutesSinceStart
       FROM payment_subscriptions ps
       JOIN billing_keys bk ON ps.fk_userId = bk.fk_userId AND bk.status = 'active'
@@ -82,7 +81,7 @@ async function processSingleBilling(subscription: any) {
       url: "service.amond.io.kr",
       moid: moid,
       goodName: "프로 멤버십 월간 구독",
-      buyerName: subscription.name || "회원",
+      buyerName: "회원",
       buyerEmail: subscription.email,
       buyerTel: "01012345678",
       price: subscription.price.toString(),
@@ -139,7 +138,7 @@ async function processSingleBilling(subscription: any) {
       subscription.billingKey,
       subscription.price,
       "프로 멤버십 월간 구독",
-      subscription.name || "회원",
+      "회원",
       "01012345678",
       subscription.email,
       result.resultCode === "00" ? "success" : "failed",
