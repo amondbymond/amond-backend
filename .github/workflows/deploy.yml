@@ -16,9 +16,18 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Generate .env for backend
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-northeast-2
+
+      - name: Deploy via SSM
+        id: deploy
         run: |
-          cat <<EOL > .env
+          # Create .env content
+          ENV_CONTENT=$(cat <<'EOL'
           NODE_ENV=${{ secrets.NODE_ENV }}
           DB_HOST=${{ secrets.DB_HOST }}
           DB_DATABASE=${{ secrets.DB_DATABASE }}
@@ -42,71 +51,32 @@ jobs:
           INICIS_PROD_API_IV=${{ secrets.INICIS_PROD_API_IV }}
           BILLING_CRON_SCHEDULE=${{ secrets.BILLING_CRON_SCHEDULE }}
           EOL
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "18"
-          cache: "npm"
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ap-northeast-2
-
-      - name: Package backend for deployment
-        run: |
-          # Create deployment package in /tmp to avoid tar conflicts
-          tar -czf /tmp/backend-deploy.tar.gz \
-            --exclude=node_modules \
-            --exclude=.git \
-            --exclude=.github \
-            --exclude=logs \
-            --exclude=*.log \
-            --exclude=backend-deploy.tar.gz \
-            ./
-
-      - name: Upload to S3
-        run: |
-          # Upload to S3 with timestamp
-          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-          aws s3 cp /tmp/backend-deploy.tar.gz s3://${{ secrets.S3_BUCKET_NAME }}/deployments/backend-$TIMESTAMP.tar.gz
-          aws s3 cp /tmp/backend-deploy.tar.gz s3://${{ secrets.S3_BUCKET_NAME }}/deployments/backend-latest.tar.gz
-
-      - name: Deploy via SSM
-        id: deploy
-        run: |
+          )
+          
+          # Base64 encode the .env content to safely pass it through SSM
+          ENV_BASE64=$(echo "$ENV_CONTENT" | base64 -w 0)
+          
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
             --document-name "AWS-RunShellScript" \
-            --parameters 'commands=[
-              "echo \"=== Starting deployment ===\"",
-              "cd /home/${{ secrets.EC2_USER }}/${{ secrets.EC2_FOLDER_NAME }}",
-              "mkdir -p backend",
-              "cd backend",
-              "echo \"=== Downloading latest deployment ===\"",
-              "aws s3 cp s3://${{ secrets.S3_BUCKET_NAME }}/deployments/backend-latest.tar.gz /tmp/backend-latest.tar.gz",
-              "echo \"=== Backing up current deployment ===\"",
-              "if [ -d /home/${{ secrets.EC2_USER }}/${{ secrets.EC2_FOLDER_NAME }}/backend ]; then",
-              "  tar -czf /tmp/backend-backup-$(date +%Y%m%d-%H%M%S).tar.gz -C /home/${{ secrets.EC2_USER }}/${{ secrets.EC2_FOLDER_NAME }}/backend .",
-              "fi",
-              "echo \"=== Extracting new deployment ===\"",
-              "tar -xzf /tmp/backend-latest.tar.gz -C /home/${{ secrets.EC2_USER }}/${{ secrets.EC2_FOLDER_NAME }}/backend",
-              "cd /home/${{ secrets.EC2_USER }}/${{ secrets.EC2_FOLDER_NAME }}/backend",
-              "echo \"=== Installing dependencies ===\"",
-              "npm install --production",
-              "echo \"=== Restarting application ===\"",
-              "pm2 restart ${{ secrets.PM2_PROCESS_NAME }} || pm2 start app.ts --name ${{ secrets.PM2_PROCESS_NAME }}",
-              "pm2 save",
-              "echo \"=== Deployment complete ===\"",
-              "pm2 status",
-              "rm /tmp/backend-latest.tar.gz"
-            ]' \
+            --parameters "{\"commands\":[
+              \"echo '=== Starting deployment ==='\",
+              \"cd /home/${{ secrets.EC2_USER }}/${{ secrets.EC2_FOLDER_NAME }}/backend || exit 1\",
+              \"echo '=== Pulling latest code from GitHub ==='\",
+              \"git fetch origin main\",
+              \"git reset --hard origin/main\",
+              \"echo '=== Creating .env file ==='\",
+              \"echo '$ENV_BASE64' | base64 -d > .env\",
+              \"echo '=== Installing dependencies ==='\",
+              \"npm install --production\",
+              \"echo '=== Building TypeScript (if needed) ==='\",
+              \"if [ -f tsconfig.json ]; then npm run build || echo 'No build script found'; fi\",
+              \"echo '=== Restarting application ==='\",
+              \"pm2 restart ${{ secrets.PM2_PROCESS_NAME }} || pm2 start app.ts --name ${{ secrets.PM2_PROCESS_NAME }}\",
+              \"pm2 save\",
+              \"echo '=== Deployment complete ==='\",
+              \"pm2 status\"
+            ]}" \
             --timeout-seconds 600 \
             --output text \
             --query 'Command.CommandId')
