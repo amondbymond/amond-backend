@@ -1,5 +1,42 @@
 # Email Notification Setup Guide
 
+## Email Configuration
+
+Since EmailJS doesn't support backend usage (returns 403 error), we're using nodemailer with SMTP.
+
+### Option 1: Gmail Setup (Recommended for testing)
+
+1. **Enable 2-Factor Authentication on your Gmail account**
+
+2. **Generate an App Password:**
+   - Go to https://myaccount.google.com/apppasswords
+   - Select "Mail" and generate a password
+   - Copy the 16-character password
+
+3. **Add to your `.env` file:**
+   ```env
+   EMAIL_HOST=smtp.gmail.com
+   EMAIL_PORT=587
+   EMAIL_USER=your-email@gmail.com
+   EMAIL_PASS=your-16-char-app-password
+   FRONTEND_URL=http://localhost:3000
+   ```
+
+### Option 2: Other Email Providers
+
+For other providers (Outlook, Yahoo, custom SMTP), adjust the settings:
+```env
+EMAIL_HOST=your-smtp-server.com
+EMAIL_PORT=587
+EMAIL_USER=your-email@example.com
+EMAIL_PASS=your-password
+FRONTEND_URL=https://your-domain.com
+```
+
+### Option 3: Skip Email (for testing without email)
+
+If you don't configure email settings, the system will log "이메일 설정이 없어 이메일 전송을 건너뜁니다." and continue without sending emails.
+
 ## Local Database Setup
 
 1. **Check your database credentials in `.env` file:**

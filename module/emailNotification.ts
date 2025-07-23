@@ -1,42 +1,74 @@
-import axios from 'axios';
+import nodemailer from 'nodemailer';
 import { queryAsync } from './commonFunction';
+import dotenv from 'dotenv';
+dotenv.config();
 
-// EmailJS configuration
-const EMAILJS_SERVICE_ID = "service_ovjg4lh";
-const EMAILJS_TEMPLATE_ID = "template_rr4danj";
-const EMAILJS_USER_ID = "3E9EuAAvdJW0hu3kQ";
-const EMAILJS_API_URL = "https://api.emailjs.com/api/v1.0/email/send";
+// Create reusable transporter object using SMTP transport
+// You'll need to add these to your .env file:
+// EMAIL_HOST=smtp.gmail.com (or your SMTP server)
+// EMAIL_PORT=587
+// EMAIL_USER=your-email@gmail.com
+// EMAIL_PASS=your-app-password
+const transporter = nodemailer.createTransport({
+  host: process.env.EMAIL_HOST || 'smtp.gmail.com',
+  port: parseInt(process.env.EMAIL_PORT || '587'),
+  secure: false, // true for 465, false for other ports
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
+  },
+});
 
-// Send email using EmailJS API
+// Send email using nodemailer
 export const sendEmailNotification = async (
   email: string, 
   projectName: string,
   contentRequestId: number
 ) => {
   try {
-    const response = await axios.post(EMAILJS_API_URL, {
-      service_id: EMAILJS_SERVICE_ID,
-      template_id: EMAILJS_TEMPLATE_ID,
-      user_id: EMAILJS_USER_ID,
-      template_params: {
-        message_type: "이미지 생성 완료 알림",
-        message: `안녕하세요!\n\n요청하신 "${projectName}" 프로젝트의 이미지 생성이 완료되었습니다.\n\nAmond 사이트에 접속하여 생성된 콘텐츠를 확인해주세요.\n\n감사합니다.\nAmond 팀`,
-        name: "Amond System",
-        email: email,
-        time: new Date().toLocaleString('ko-KR'),
-        to_email: email,
-      }
-    }, {
-      headers: {
-        'Content-Type': 'application/json',
-      }
-    });
-
-    if (response.status === 200) {
-      console.log(`이메일 알림 전송 성공: ${email} - 콘텐츠 요청 ID: ${contentRequestId}`);
-      return true;
+    // If email credentials are not configured, skip sending
+    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+      console.log('이메일 설정이 없어 이메일 전송을 건너뜁니다.');
+      return false;
     }
-    return false;
+
+    const mailOptions = {
+      from: `"Amond System" <${process.env.EMAIL_USER}>`,
+      to: email,
+      subject: `[Amond] ${projectName} 이미지 생성 완료`,
+      html: `
+        <div style="font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; max-width: 600px; margin: 0 auto;">
+          <div style="background-color: #5865F2; color: white; padding: 20px; text-align: center;">
+            <h1 style="margin: 0;">Amond</h1>
+          </div>
+          <div style="padding: 30px; background-color: #f5f5f5;">
+            <h2 style="color: #333;">이미지 생성 완료 알림</h2>
+            <p style="color: #666; line-height: 1.6;">
+              안녕하세요!<br><br>
+              요청하신 <strong>"${projectName}"</strong> 프로젝트의 이미지 생성이 완료되었습니다.<br><br>
+              Amond 사이트에 접속하여 생성된 콘텐츠를 확인해주세요.<br><br>
+              감사합니다.<br>
+              Amond 팀
+            </p>
+            <div style="text-align: center; margin-top: 30px;">
+              <a href="${process.env.FRONTEND_URL || 'https://amond.kr'}" 
+                 style="background-color: #5865F2; color: white; padding: 12px 30px; 
+                        text-decoration: none; border-radius: 5px; display: inline-block;">
+                콘텐츠 확인하기
+              </a>
+            </div>
+          </div>
+          <div style="padding: 20px; text-align: center; color: #999; font-size: 12px;">
+            © 2025 Amond. All rights reserved.
+          </div>
+        </div>
+      `,
+      text: `안녕하세요!\n\n요청하신 "${projectName}" 프로젝트의 이미지 생성이 완료되었습니다.\n\nAmond 사이트에 접속하여 생성된 콘텐츠를 확인해주세요.\n\n감사합니다.\nAmond 팀`,
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`이메일 알림 전송 성공: ${email} - 콘텐츠 요청 ID: ${contentRequestId}`, info.messageId);
+    return true;
   } catch (error) {
     console.error('이메일 전송 실패:', error);
     return false;
