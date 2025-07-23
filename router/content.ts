@@ -15,6 +15,7 @@ import {
 } from "../module/aiApi";
 import { scrapeImagesController } from "../module/imageScraper";
 import { generateBrandChatter, type BrandInput } from "../module/brandAnalysis";
+import { checkAndSendNotifications } from "../module/emailNotification";
 import moment from "moment-timezone";
 
 // ㅇ 프로젝트 (브랜드 정보)
@@ -415,6 +416,9 @@ async function createContent(contentRequestId: number) {
       }
     }
     
+    // Check and send email notifications after all images are processed
+    await checkAndSendNotifications(contentRequestId);
+    
   } catch (e) {
     console.error(e);
     throw e;
@@ -795,6 +799,28 @@ async function checkLimitUpdate({
 
 // Image scraping endpoint
 router.post("/scrape-images", scrapeImagesController);
+
+// Email notification endpoint
+router.post("/notification/email", isLogin, async function (req, res) {
+  const { email, contentRequestId } = req.body;
+  const userId = req.user?.id;
+
+  if (!email || !contentRequestId) {
+    return res.status(400).json({ message: "이메일과 콘텐츠 요청 ID가 필요합니다." });
+  }
+
+  try {
+    // Store email notification request in database
+    const sql = `INSERT INTO emailNotification (fk_userId, fk_contentRequestId, email, status, createdAt)
+      VALUES (?, ?, ?, 'pending', NOW())`;
+    await queryAsync(sql, [userId, contentRequestId, email]);
+
+    return res.status(200).json({ message: "이메일 알림이 설정되었습니다." });
+  } catch (e) {
+    console.error("Email notification error:", e);
+    return res.status(500).json({ message: "이메일 알림 설정 실패" });
+  }
+});
 
 
 // Brand summary generation endpoint

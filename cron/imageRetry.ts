@@ -1,6 +1,7 @@
 import cron from "node-cron";
 import { queryAsync } from "../module/commonFunction";
 import { createImage } from "../router/content";
+import { checkAndSendNotifications } from "../module/emailNotification";
 
 let isProcessing = false;
 
@@ -30,6 +31,15 @@ cron.schedule("* * * * *", async () => {
         // 성공 시 로그 삭제
         const clearLogSql = `UPDATE content SET imageLog = NULL WHERE id = ?`;
         await queryAsync(clearLogSql, [image.id]);
+        
+        // Get contentRequestId for this image
+        const contentRequestSql = `SELECT fk_contentRequestId FROM content WHERE id = ?`;
+        const contentRequestResult = await queryAsync(contentRequestSql, [image.id]);
+        
+        if (contentRequestResult.length > 0) {
+          // Check and send notifications if all images are complete
+          await checkAndSendNotifications(contentRequestResult[0].fk_contentRequestId);
+        }
       } catch (e) {
         console.error(`이미지 재생성 실패 (ID: ${image.id}):`, e);
         // 429 에러가 아닌 다른 에러의 경우에도 로그를 남김
