@@ -61,21 +61,22 @@ jobs:
 
       - name: Package backend for deployment
         run: |
-          # Create deployment package
-          tar -czf backend-deploy.tar.gz \
+          # Create deployment package in /tmp to avoid tar conflicts
+          tar -czf /tmp/backend-deploy.tar.gz \
             --exclude=node_modules \
             --exclude=.git \
             --exclude=.github \
             --exclude=logs \
             --exclude=*.log \
+            --exclude=backend-deploy.tar.gz \
             ./
 
       - name: Upload to S3
         run: |
           # Upload to S3 with timestamp
           TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-          aws s3 cp backend-deploy.tar.gz s3://${{ secrets.S3_BUCKET_NAME }}/deployments/backend-$TIMESTAMP.tar.gz
-          aws s3 cp backend-deploy.tar.gz s3://${{ secrets.S3_BUCKET_NAME }}/deployments/backend-latest.tar.gz
+          aws s3 cp /tmp/backend-deploy.tar.gz s3://${{ secrets.S3_BUCKET_NAME }}/deployments/backend-$TIMESTAMP.tar.gz
+          aws s3 cp /tmp/backend-deploy.tar.gz s3://${{ secrets.S3_BUCKET_NAME }}/deployments/backend-latest.tar.gz
 
       - name: Deploy via SSM
         id: deploy
