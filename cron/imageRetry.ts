@@ -30,34 +30,6 @@ cron.schedule("* * * * *", async () => {
         // 성공 시 로그 삭제
         const clearLogSql = `UPDATE content SET imageLog = NULL WHERE id = ?`;
         await queryAsync(clearLogSql, [image.id]);
-        
-        // Check if this was the last image for a content request
-        const checkCompleteSql = `SELECT a.fk_contentRequestId, COUNT(*) as totalImages, 
-          SUM(CASE WHEN a.imageUrl IS NOT NULL THEN 1 ELSE 0 END) as completedImages
-          FROM content a
-          WHERE a.fk_contentRequestId = (SELECT fk_contentRequestId FROM content WHERE id = ?)
-          GROUP BY a.fk_contentRequestId`;
-        const completionResult = await queryAsync(checkCompleteSql, [image.id]);
-        
-        if (completionResult.length > 0) {
-          const { fk_contentRequestId, totalImages, completedImages } = completionResult[0];
-          
-          // If all images are completed, send email notifications
-          if (totalImages === completedImages) {
-            const notificationSql = `SELECT * FROM emailNotification 
-              WHERE fk_contentRequestId = ? AND status = 'pending'`;
-            const notifications = await queryAsync(notificationSql, [fk_contentRequestId]);
-            
-            for (const notification of notifications) {
-              // TODO: Send actual email here
-              console.log(`이메일 알림 전송: ${notification.email} - 콘텐츠 생성 완료`);
-              
-              // Update notification status
-              const updateNotificationSql = `UPDATE emailNotification SET status = 'sent' WHERE id = ?`;
-              await queryAsync(updateNotificationSql, [notification.id]);
-            }
-          }
-        }
       } catch (e) {
         console.error(`이미지 재생성 실패 (ID: ${image.id}):`, e);
         // 429 에러가 아닌 다른 에러의 경우에도 로그를 남김
