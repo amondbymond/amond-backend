@@ -23,7 +23,7 @@ export const setupSession = (app: express.Express) => {
     session({
       secret: process.env.SESSION_SECRET as string,
       resave: false,
-      saveUninitialized: false,
+      saveUninitialized: true, // Allow saving uninitialized sessions for incognito mode
       store: redisStore,
       cookie: {
         // maxAge: 10 * 1000,
@@ -32,6 +32,7 @@ export const setupSession = (app: express.Express) => {
         secure: process.env.NODE_ENV === "production" ? true : false, // HTTPS를 사용하는 경우에만 쿠키를 전송
         sameSite: process.env.NODE_ENV === "production" ? "none" : "lax", // Cross-domain cookies
         // Remove domain restriction to allow cross-domain cookies
+        domain: process.env.NODE_ENV === "production" ? ".mond.io.kr" : undefined, // Allow cookies across subdomains
       },
     })
   );
