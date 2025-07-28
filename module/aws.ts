@@ -15,6 +15,9 @@ const s3 = new S3Client({
     accessKeyId: process.env.AWS_ACCESS_KEY as string,
     secretAccessKey: process.env.AWS_SECRET_ACCESS as string,
   },
+  // Disable automatic checksum calculation
+  requestChecksumCalculation: "WHEN_REQUIRED",
+  responseChecksumValidation: "WHEN_REQUIRED",
 });
 
 // 업로드 (presigned url)
@@ -41,7 +44,11 @@ const uploadPresigned = async ({
 
   try {
     // getSignedUrl 함수 호출, expiresIn 옵션으로 URL의 유효 시간 설정
-    const url = await getSignedUrl(s3, command, { expiresIn: 60 * 5 });
+    const url = await getSignedUrl(s3, command, { 
+      expiresIn: 60 * 5,
+      // Disable checksum headers in presigned URL
+      unhoistableHeaders: new Set(["x-amz-checksum-crc32"]),
+    });
     return { url, entireDirectory };
   } catch (error) {
     console.error("Error creating presigned URL", error);
