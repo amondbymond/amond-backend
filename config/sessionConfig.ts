@@ -23,17 +23,15 @@ export const setupSession = (app: express.Express) => {
     session({
       secret: process.env.SESSION_SECRET as string,
       resave: false,
-      saveUninitialized: true, // Allow saving uninitialized sessions for incognito mode
+      saveUninitialized: false,
       store: redisStore,
       cookie: {
         // maxAge: 10 * 1000,
         maxAge: 60 * 60 * 1000 * 24 * 30, // 30일
         httpOnly: true, // JavaScript를 통한 쿠키 접근 방지
-        secure: process.env.NODE_ENV === "production", // Use secure in production
-        sameSite: "none" as const, // Must be "none" for cross-domain cookies
-        // Set path to ensure cookie is sent with all requests
-        path: "/",
-        // Don't set domain to allow cookies to work across different domains
+        secure: process.env.NODE_ENV === "production" ? true : false, // HTTPS를 사용하는 경우에만 쿠키를 전송
+        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax", // Cross-domain cookies
+        // Remove domain restriction to allow cross-domain cookies
       },
     })
   );

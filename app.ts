@@ -32,6 +32,13 @@ app.use((req, res, next) => {
       userAgent: req.headers['user-agent']?.includes('Safari') ? 'Safari' : 'Other',
     });
   }
+  
+  // For Safari, we need to ensure the session is saved
+  const isSafari = req.headers['user-agent']?.includes('Safari') && !req.headers['user-agent']?.includes('Chrome');
+  if (isSafari && req.session) {
+    req.session.save();
+  }
+  
   next();
 });
 
