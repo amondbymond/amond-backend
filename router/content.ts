@@ -19,9 +19,10 @@ import { checkAndSendNotifications } from "../module/emailNotificationSES";
 import moment from "moment-timezone";
 
 // ㅇ 프로젝트 (브랜드 정보)
-// 프로젝트 생성
+// 프로젝트 생성 - Allow both authenticated and non-authenticated users
 router.post("/project", async function (req, res) {
   const userId = req.user?.id;
+  console.log("Project creation - userId:", userId, "session:", req.session?.id);
   const { name, category, url, reasonList, description, imageNameList } =
     req.body;
 
@@ -37,10 +38,12 @@ router.post("/project", async function (req, res) {
       entireDirectoryList.push(entireDirectory);
     }
 
-    const sql = `INSERT INTO project(name, category, url, imageList, reasonList, description, fk_userId, createdAt)
-      VALUES(?, ?, ?, ?, ?, ?, ?, NOW())`;
+    const sessionName = `${name} - ${moment().format('YYYY-MM-DD HH:mm')}`;
+    const sql = `INSERT INTO project(name, sessionName, category, url, imageList, reasonList, description, fk_userId, createdAt, lastAccessedAt)
+      VALUES(?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`;
     const sqlValues = [
       name,
+      sessionName,
       category,
       url,
       entireDirectoryList.join(","),
@@ -89,12 +92,41 @@ router.put("/project/newUser", async function (req, res) {
   }
 });
 
-// 프로젝트 이동
+// 모든 프로젝트 세션 가져오기
+router.get("/project/sessions", isLogin, async function (req, res) {
+  const userId = req.user?.id;
+
+  try {
+    const sql = `SELECT id, name, sessionName, category, url, createdAt, lastAccessedAt, isActive 
+                 FROM project 
+                 WHERE fk_userId = ? 
+                 ORDER BY lastAccessedAt DESC, createdAt DESC`;
+    const result = await queryAsync(sql, [userId]);
+    
+    const sessions = result.map((project: any) => ({
+      projectId: createHashId(project.id),
+      name: project.name,
+      sessionName: project.sessionName || `${project.name} - ${moment(project.createdAt).format('YYYY-MM-DD HH:mm')}`,
+      category: project.category,
+      url: project.url,
+      createdAt: project.createdAt,
+      lastAccessedAt: project.lastAccessedAt,
+      isActive: project.isActive,
+    }));
+
+    res.status(200).json({ sessions });
+  } catch (e) {
+    console.log(e);
+    res.status(500).json({ message: "프로젝트 세션 목록 조회 실패" });
+  }
+});
+
+// 프로젝트 이동 (legacy - kept for backward compatibility)
 router.get("/project", async function (req, res) {
   const userId = req.user?.id;
 
   try {
-    const sql = `SELECT id FROM project WHERE fk_userId = ?`;
+    const sql = `SELECT id FROM project WHERE fk_userId = ? ORDER BY lastAccessedAt DESC LIMIT 1`;
     const result = await queryAsync(sql, [userId]);
     let projectId = null;
     if (result.length !== 0) {
@@ -105,6 +137,30 @@ router.get("/project", async function (req, res) {
   } catch (e) {
     console.log(e);
     res.status(500).json({ message: "프로젝트 이동 실패" });
+  }
+});
+
+// 프로젝트 세션 이름 변경
+router.put("/project/session/rename", isLogin, async function (req, res) {
+  const userId = req.user?.id;
+  const { projectId, sessionName } = req.body;
+
+  try {
+    const sql = `UPDATE project SET sessionName = ? WHERE id = ? AND fk_userId = ?`;
+    const result = await queryAsync(sql, [
+      sessionName,
+      decodeHashId(projectId),
+      userId,
+    ]);
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ message: "프로젝트를 찾을 수 없습니다." });
+    }
+
+    res.status(200).json({ message: "세션 이름이 변경되었습니다." });
+  } catch (e) {
+    console.log(e);
+    res.status(500).json({ message: "세션 이름 변경 실패" });
   }
 });
 
@@ -125,6 +181,12 @@ router.get("/project/detail", isLogin, async function (req, res) {
         .status(400)
         .json({ message: "일치하는 프로젝트 정보를 찾을 수 없습니다." });
     }
+    
+    // Update last accessed time
+    await queryAsync(
+      `UPDATE project SET lastAccessedAt = NOW() WHERE id = ?`,
+      [decodeHashId(projectId as string)]
+    );
 
     result[0].imageList = result[0].imageList.split(",");
     result[0].reasonList = result[0].reasonList.split(",");
