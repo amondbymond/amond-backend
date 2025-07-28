@@ -49,7 +49,9 @@ export function isValidImageUrl(url: string | null | undefined): boolean {
       'imgix.net',
       'images.unsplash.com',
       'amazonaws.com',
-      'googleusercontent.com'
+      'googleusercontent.com',
+      'ssl-images-amazon.com',
+      'media-amazon.com'
     ];
     
     const isFromKnownCDN = knownImageCDNs.some(cdn => urlObj.hostname.includes(cdn));
@@ -85,6 +87,17 @@ export function fixImageUrl(url: string): string | null {
   // Add https:// if protocol is missing but looks like a domain
   if (!url.includes('://') && url.includes('.')) {
     url = 'https://' + url;
+  }
+
+  // Fix Amazon image URLs that are missing file extensions
+  if (url.includes('ssl-images-amazon.com') || url.includes('media-amazon.com')) {
+    // Check if URL already has an image extension
+    const imageExtensions = /\.(jpg|jpeg|png|gif|webp|svg|bmp|ico)$/i;
+    if (!imageExtensions.test(url)) {
+      // Amazon images are typically JPEGs, add .jpg extension
+      url = url + '.jpg';
+      console.log(`Fixed Amazon image URL: ${url}`);
+    }
   }
 
   // Validate the fixed URL

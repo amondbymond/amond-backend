@@ -4,7 +4,7 @@ import axios from 'axios';
 import { URL } from 'url';
 import { spawn } from 'child_process';
 import path from 'path';
-import { isValidImageUrl } from '../utils/urlValidator';
+import { isValidImageUrl, fixImageUrl } from '../utils/urlValidator';
 
 // --- CONFIGURATION ---
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY || 'PASTE_YOUR_YOUTUBE_API_KEY_HERE';
@@ -16,11 +16,16 @@ const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY || 'PASTE_YOUR_YOUTUBE_API_K
  */
 const imageUrlToBase64 = async (url: string): Promise<string> => {
     try {
+        // Try to fix the URL first
+        const fixedUrl = fixImageUrl(url);
+        
         // Validate URL before attempting to fetch
-        if (!isValidImageUrl(url)) {
+        if (!fixedUrl || !isValidImageUrl(fixedUrl)) {
             console.error(`Invalid or incomplete image URL: ${url}`);
             return '';
         }
+        
+        url = fixedUrl;
         
         const response = await axios.get(url, {
             responseType: 'arraybuffer',
@@ -418,7 +423,13 @@ const handleGeneralWebsite = async (url: string): Promise<string[]> => {
         const topContentImages = contentImages.slice(0, 8);
         topContentImages.forEach(img => {
             if (img && img.trim() && img.length > 10 && img.startsWith('http')) {
-                imageUrls.add(img);
+                // Try to fix the URL before adding it
+                const fixedImg = fixImageUrl(img);
+                if (fixedImg) {
+                    imageUrls.add(fixedImg);
+                } else {
+                    imageUrls.add(img); // Add original if fix fails
+                }
             }
         });
 
@@ -433,7 +444,13 @@ const handleGeneralWebsite = async (url: string): Promise<string[]> => {
                 .map(img => img.src);
                 
             largerBrandingImages.forEach(img => {
-                imageUrls.add(img);
+                // Try to fix the URL before adding it
+                const fixedImg = fixImageUrl(img);
+                if (fixedImg) {
+                    imageUrls.add(fixedImg);
+                } else {
+                    imageUrls.add(img); // Add original if fix fails
+                }
             });
         }
 
@@ -501,12 +518,15 @@ console.log('Environment check:', {
             
             finalImages = imageUrls.filter(img => img.length > 0);
         } else {
-            // Filter out invalid URLs before attempting to convert
-            const validUrls = imageUrls.filter(url => isValidImageUrl(url));
-            console.log(`Filtered ${imageUrls.length - validUrls.length} invalid URLs`);
+            // Try to fix URLs and filter out invalid ones
+            const fixedUrls = imageUrls
+                .map(url => fixImageUrl(url))
+                .filter((url): url is string => url !== null && isValidImageUrl(url));
+            
+            console.log(`Fixed/filtered URLs: ${imageUrls.length} -> ${fixedUrls.length}`);
             
             const base64Images = await Promise.all(
-                validUrls.map(imageUrlToBase64)
+                fixedUrls.map(imageUrlToBase64)
             );
             finalImages = base64Images.filter(b64 => b64.length > 0);
         }

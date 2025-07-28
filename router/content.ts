@@ -15,7 +15,7 @@ import {
 } from "../module/aiApi";
 import { scrapeImagesController } from "../module/imageScraper";
 import { generateBrandChatter, type BrandInput } from "../module/brandAnalysis";
-import { checkAndSendNotifications } from "../module/emailNotification";
+import { checkAndSendNotifications } from "../module/emailNotificationSES";
 import moment from "moment-timezone";
 
 // ㅇ 프로젝트 (브랜드 정보)

@@ -1,7 +1,7 @@
 import cron from "node-cron";
 import { queryAsync } from "../module/commonFunction";
 import { createImage } from "../router/content";
-import { checkAndSendNotifications } from "../module/emailNotification";
+import { checkAndSendNotifications } from "../module/emailNotificationSES";
 
 let isProcessing = false;
 
