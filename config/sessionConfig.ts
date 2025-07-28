@@ -31,8 +31,8 @@ export const setupSession = (app: express.Express) => {
         httpOnly: true, // JavaScript를 통한 쿠키 접근 방지
         secure: process.env.NODE_ENV === "production" ? true : false, // HTTPS를 사용하는 경우에만 쿠키를 전송
         sameSite: process.env.NODE_ENV === "production" ? "none" : "lax", // Cross-domain cookies
-        // Remove domain restriction to allow cross-domain cookies
-        domain: process.env.NODE_ENV === "production" ? ".mond.io.kr" : undefined, // Allow cookies across subdomains
+        // Don't set domain to allow cookies to work across different domains
+        // domain is not set to allow cross-origin cookies with SameSite=none
       },
     })
   );
