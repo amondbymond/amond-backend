@@ -10,16 +10,28 @@ import {
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 // Debug: Check if environment variables are loaded
+const awsAccessKey = process.env.AWS_ACCESS_KEY;
+const awsSecretKey = process.env.AWS_SECRET_ACCESS;
+
 console.log('AWS Environment Check:', {
-  AWS_ACCESS_KEY: process.env.AWS_ACCESS_KEY ? `Set (${process.env.AWS_ACCESS_KEY.substring(0, 10)}...)` : 'Not set',
-  AWS_SECRET_ACCESS: process.env.AWS_SECRET_ACCESS ? 'Set' : 'Not set',
+  AWS_ACCESS_KEY: awsAccessKey ? `Set (${awsAccessKey.substring(0, 10)}...)` : 'Not set',
+  AWS_SECRET_ACCESS: awsSecretKey ? 'Set' : 'Not set',
 });
+
+// Validate AWS credentials before creating S3 client
+if (!awsAccessKey || !awsSecretKey) {
+  console.error('CRITICAL: AWS credentials are not properly configured!');
+  console.error('AWS_ACCESS_KEY:', awsAccessKey ? 'Present but empty' : 'Missing');
+  console.error('AWS_SECRET_ACCESS:', awsSecretKey ? 'Present but empty' : 'Missing');
+  console.error('Current environment:', process.env.NODE_ENV);
+  console.error('All env vars:', Object.keys(process.env).filter(k => k.startsWith('AWS')));
+}
 
 const s3 = new S3Client({
   region: "ap-northeast-2", // 사용자 사용 지역 (서울의 경우 ap-northeast-2)
   credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY as string,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS as string,
+    accessKeyId: awsAccessKey,
+    secretAccessKey: awsSecretKey,
   },
   // Disable automatic checksum calculation
   requestChecksumCalculation: "WHEN_REQUIRED",
@@ -49,16 +61,33 @@ const uploadPresigned = async ({
   });
 
   try {
+    // Check if credentials are available before generating URL
+    if (!awsAccessKey || !awsSecretKey) {
+      console.error("Cannot generate presigned URL: AWS credentials not configured");
+      throw new Error("AWS credentials not configured");
+    }
+    
     // getSignedUrl 함수 호출, expiresIn 옵션으로 URL의 유효 시간 설정
     const url = await getSignedUrl(s3, command, { 
       expiresIn: 60 * 5,
       // Disable checksum headers in presigned URL
       unhoistableHeaders: new Set(["x-amz-checksum-crc32"]),
     });
+    
+    // Validate the generated URL
+    if (!url.includes(awsAccessKey)) {
+      console.error("Generated presigned URL appears to be malformed - missing access key");
+      throw new Error("Invalid presigned URL generated");
+    }
+    
     return { url, entireDirectory };
   } catch (error) {
-    console.error("Error creating presigned URL", error);
-    throw new Error("Error creating presigned URL");
+    console.error("Error creating presigned URL:", error);
+    console.error("AWS credentials status:", {
+      accessKey: awsAccessKey ? "Present" : "Missing",
+      secretKey: awsSecretKey ? "Present" : "Missing",
+    });
+    throw error;
   }
 };
 
