@@ -21,6 +21,11 @@ const corsOptions = {
       "https://stgmobile.inicis.com"
     ];
     
+    // Add FRONTEND_URL if it exists
+    if (process.env.FRONTEND_URL) {
+      allowedOrigins.push(process.env.FRONTEND_URL);
+    }
+    
     // Allow requests with no origin (like mobile apps or curl)
     if (!origin) return callback(null, true);
     
