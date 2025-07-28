@@ -19,19 +19,26 @@ console.log('AWS Environment Check:', {
 });
 
 // Validate AWS credentials before creating S3 client
+let credentialsConfigured = true;
 if (!awsAccessKey || !awsSecretKey) {
   console.error('CRITICAL: AWS credentials are not properly configured!');
   console.error('AWS_ACCESS_KEY:', awsAccessKey ? 'Present but empty' : 'Missing');
   console.error('AWS_SECRET_ACCESS:', awsSecretKey ? 'Present but empty' : 'Missing');
   console.error('Current environment:', process.env.NODE_ENV);
   console.error('All env vars:', Object.keys(process.env).filter(k => k.startsWith('AWS')));
+  credentialsConfigured = false;
 }
 
+// Create S3 client with dummy credentials if not configured (to prevent initialization errors)
 const s3 = new S3Client({
   region: "ap-northeast-2", // 사용자 사용 지역 (서울의 경우 ap-northeast-2)
-  credentials: {
+  credentials: credentialsConfigured ? {
     accessKeyId: awsAccessKey,
     secretAccessKey: awsSecretKey,
+  } : {
+    // Use dummy credentials to prevent initialization errors
+    accessKeyId: "DUMMY_ACCESS_KEY",
+    secretAccessKey: "DUMMY_SECRET_KEY",
   },
   // Disable automatic checksum calculation
   requestChecksumCalculation: "WHEN_REQUIRED",
@@ -62,9 +69,9 @@ const uploadPresigned = async ({
 
   try {
     // Check if credentials are available before generating URL
-    if (!awsAccessKey || !awsSecretKey) {
+    if (!credentialsConfigured) {
       console.error("Cannot generate presigned URL: AWS credentials not configured");
-      throw new Error("AWS credentials not configured");
+      throw new Error("AWS credentials not configured. Please check your environment variables.");
     }
     
     // getSignedUrl 함수 호출, expiresIn 옵션으로 URL의 유효 시간 설정

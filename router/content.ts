@@ -61,9 +61,21 @@ router.post("/project", async function (req, res) {
       presignedUrlList,
       userId: userId || null,
     });
-  } catch (e) {
-    console.log(e);
-    res.status(500).json({ message: "프로젝트 생성 실패" });
+  } catch (e: any) {
+    console.error("Project creation error:", e);
+    
+    // Check if it's an AWS credentials error
+    if (e.message && e.message.includes("AWS credentials")) {
+      res.status(503).json({ 
+        message: "프로젝트 생성 실패: 이미지 업로드 서비스를 일시적으로 사용할 수 없습니다.",
+        error: "AWS 서비스 설정 중입니다. 잠시 후 다시 시도해주세요."
+      });
+    } else {
+      res.status(500).json({ 
+        message: "프로젝트 생성 실패",
+        error: process.env.NODE_ENV === 'development' ? e.message : undefined
+      });
+    }
   }
 });
 
@@ -228,9 +240,21 @@ router.post("/project/edit/image", isLogin, async function (req, res) {
     }
 
     res.status(200).json({ presignedUrlList, entireDirectoryList });
-  } catch (e) {
-    console.log(e);
-    res.status(500).json({ message: "프로젝트 이미지 추가 실패" });
+  } catch (e: any) {
+    console.error("Project image upload error:", e);
+    
+    // Check if it's an AWS credentials error
+    if (e.message && e.message.includes("AWS credentials")) {
+      res.status(503).json({ 
+        message: "프로젝트 이미지 추가 실패: 이미지 업로드 서비스를 일시적으로 사용할 수 없습니다.",
+        error: "AWS 서비스 설정 중입니다. 잠시 후 다시 시도해주세요."
+      });
+    } else {
+      res.status(500).json({ 
+        message: "프로젝트 이미지 추가 실패",
+        error: process.env.NODE_ENV === 'development' ? e.message : undefined
+      });
+    }
   }
 });
 
