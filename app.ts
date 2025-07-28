@@ -12,6 +12,11 @@ import { initBillingCron } from "./jobs/billingCron";
 const PORT = 9988;
 const app = express();
 
+// Trust proxy for production (needed for secure cookies behind reverse proxy)
+if (process.env.NODE_ENV === 'production') {
+  app.set('trust proxy', 1);
+}
+
 setupCors(app); // cors & Helmet 설정 - MUST be first!
 setupExpress(app); // express 설정 & rate limit
 setupSession(app); // cookie & session 설정
@@ -33,6 +38,18 @@ app.use("/payment", paymentRouter);
 
 app.get("/", (req, res) => {
   res.status(200).send("OK");
+});
+
+// Session debug endpoint
+app.get("/session-debug", (req, res) => {
+  res.json({
+    sessionId: req.session?.id,
+    userId: req.user?.id,
+    isAuthenticated: req.isAuthenticated ? req.isAuthenticated() : false,
+    sessionData: req.session,
+    cookies: req.headers.cookie,
+    origin: req.headers.origin,
+  });
 });
 
 // Debug endpoint to check CORS
