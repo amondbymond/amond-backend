@@ -94,7 +94,7 @@ jobs:
               \"echo '=== Building TypeScript (if needed) ==='\",
               \"if [ -f tsconfig.json ]; then sudo -u ec2-user npm run build || echo 'No build script found'; fi\",
               \"echo '=== Restarting application ==='\",
-              \"sudo -u ec2-user pm2 restart ${{ secrets.PM2_PROCESS_NAME }} || sudo -u ec2-user pm2 start app.ts --name ${{ secrets.PM2_PROCESS_NAME }}\",
+              \"sudo -u ec2-user pm2 restart ${{ secrets.PM2_PROCESS_NAME }} --update-env || sudo -u ec2-user pm2 start app.ts --name ${{ secrets.PM2_PROCESS_NAME }}\",
               \"sudo -u ec2-user pm2 save\",
               \"echo '=== Deployment complete ==='\",
               \"sudo -u ec2-user pm2 status\"
