@@ -29,8 +29,8 @@ export const setupSession = (app: express.Express) => {
         // maxAge: 10 * 1000,
         maxAge: 60 * 60 * 1000 * 24 * 30, // 30일
         httpOnly: true, // JavaScript를 통한 쿠키 접근 방지
-        secure: process.env.NODE_ENV === "production" ? true : false, // HTTPS를 사용하는 경우에만 쿠키를 전송
-        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax", // Cross-domain cookies
+        secure: true, // Always use secure in production (required for SameSite=none)
+        sameSite: "none" as const, // Must be "none" for cross-domain cookies
         // Don't set domain to allow cookies to work across different domains
         // domain is not set to allow cross-origin cookies with SameSite=none
       },

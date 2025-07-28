@@ -42,6 +42,13 @@ app.get("/", (req, res) => {
 
 // Session debug endpoint
 app.get("/session-debug", (req, res) => {
+  console.log("Session Debug Request:", {
+    headers: req.headers,
+    sessionID: req.sessionID,
+    session: req.session,
+    cookies: req.cookies,
+  });
+  
   res.json({
     sessionId: req.session?.id,
     userId: req.user?.id,
@@ -49,6 +56,8 @@ app.get("/session-debug", (req, res) => {
     sessionData: req.session,
     cookies: req.headers.cookie,
     origin: req.headers.origin,
+    secure: req.secure,
+    protocol: req.protocol,
   });
 });
 
