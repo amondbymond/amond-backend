@@ -34,7 +34,7 @@ function generateSHA512Hash(data: string): string {
  * 활성 구독자들의 정기결제 처리
  */
 export async function processMonthlyBilling() {
-  console.log("[BillingService] 월간 정기결제 프로세스 시작");
+  
   
   try {
     // 결제가 필요한 활성 구독자 조회
@@ -56,15 +56,15 @@ export async function processMonthlyBilling() {
         AND TIMESTAMPDIFF(MINUTE, ps.startDate, NOW()) <= 5  -- TEST: 가입 후 5분 이내만
     `);
 
-    console.log(`[BillingService] 처리할 구독: ${activeSubs.length}건`);
+   
 
     for (const subscription of activeSubs) {
       await processSingleBilling(subscription);
     }
 
-    console.log("[BillingService] 월간 정기결제 프로세스 완료");
+  
   } catch (error) {
-    console.error("[BillingService] 월간 정기결제 프로세스 에러:", error);
+   
   }
 }
 
@@ -105,7 +105,7 @@ async function processSingleBilling(subscription: any) {
       data: detail
     };
 
-    console.log(`[BillingService] 결제 요청 - 사용자: ${subscription.fk_userId}, 금액: ${subscription.price}`);
+   
 
     // INICIS API 호출
     const response = await axios.post(config.apiUrl, postData, {
@@ -163,10 +163,10 @@ async function processSingleBilling(subscription: any) {
         WHERE id = ?
       `, [subscription.fk_userId]);
 
-      console.log(`[BillingService] 결제 성공 - 사용자: ${subscription.fk_userId}`);
+      
     } else {
       // 결제 실패 처리
-      console.error(`[BillingService] 결제 실패 - 사용자: ${subscription.fk_userId}, 오류: ${result.resultMsg}`);
+      
       
       // 3회 실패 시 구독 일시정지
       const failCount = await queryAsync(`
@@ -184,11 +184,11 @@ async function processSingleBilling(subscription: any) {
           WHERE id = ?
         `, [subscription.id]);
         
-        console.log(`[BillingService] 구독 일시정지 - 사용자: ${subscription.fk_userId}`);
+        
       }
     }
   } catch (error) {
-    console.error(`[BillingService] 결제 처리 에러 - 사용자: ${subscription.fk_userId}`, error);
+    
   }
 }
 
@@ -196,7 +196,7 @@ async function processSingleBilling(subscription: any) {
  * 만료된 멤버십 처리
  */
 export async function processExpiredMemberships() {
-  console.log("[BillingService] 만료된 멤버십 처리 시작");
+  
   
   try {
     // 만료된 프로 멤버십을 basic으로 다운그레이드
@@ -209,7 +209,7 @@ export async function processExpiredMemberships() {
         AND membershipStatus IN ('active', 'cancelled')
     `);
 
-    console.log(`[BillingService] ${result.affectedRows}개의 멤버십이 만료 처리되었습니다.`);
+    
     
     // 취소된 구독 중 만료일이 지난 것들을 expired로 변경
     await queryAsync(`
@@ -219,6 +219,6 @@ export async function processExpiredMemberships() {
         AND nextBillingDate < CURDATE()
     `);
   } catch (error) {
-    console.error("[BillingService] 만료된 멤버십 처리 에러:", error);
+    
   }
 }
