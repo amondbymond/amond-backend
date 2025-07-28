@@ -36,8 +36,8 @@ jobs:
           CRYPTO_KEY=${{ secrets.CRYPTO_KEY }}
           CRYPTO_DELETED_KEY=${{ secrets.CRYPTO_DELETED_KEY }}
           OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
-          AWS_ACCESS_KEY=${{ secrets.AWS_ACCESS_KEY }}
-          AWS_SECRET_ACCESS=${{ secrets.AWS_SECRET_ACCESS }}
+          AWS_ACCESS_KEY=${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS=${{ secrets.AWS_SECRET_ACCESS_KEY }}
           GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
           GOOGLE_REFRESH_TOKEN=${{ secrets.GOOGLE_REFRESH_TOKEN }}
