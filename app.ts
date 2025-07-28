@@ -22,6 +22,19 @@ setupExpress(app); // express 설정 & rate limit
 setupSession(app); // cookie & session 설정
 initializePassport(app); // passport 초기화
 
+// Debug middleware for cookie issues
+app.use((req, res, next) => {
+  if (req.path.includes('/auth/loginCheck') || req.path.includes('/content/project')) {
+    console.log(`[Cookie Debug] ${req.method} ${req.path}:`, {
+      origin: req.headers.origin,
+      cookie: req.headers.cookie ? 'Present' : 'Missing',
+      sessionID: req.sessionID,
+      userAgent: req.headers['user-agent']?.includes('Safari') ? 'Safari' : 'Other',
+    });
+  }
+  next();
+});
+
 // 크론 작업 초기화
 initBillingCron();
 

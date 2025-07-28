@@ -29,10 +29,11 @@ export const setupSession = (app: express.Express) => {
         // maxAge: 10 * 1000,
         maxAge: 60 * 60 * 1000 * 24 * 30, // 30일
         httpOnly: true, // JavaScript를 통한 쿠키 접근 방지
-        secure: true, // Always use secure in production (required for SameSite=none)
+        secure: process.env.NODE_ENV === "production", // Use secure in production
         sameSite: "none" as const, // Must be "none" for cross-domain cookies
+        // Set path to ensure cookie is sent with all requests
+        path: "/",
         // Don't set domain to allow cookies to work across different domains
-        // domain is not set to allow cross-origin cookies with SameSite=none
       },
     })
   );
