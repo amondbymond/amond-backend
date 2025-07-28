@@ -9,6 +9,12 @@ import {
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
+// Debug: Check if environment variables are loaded
+console.log('AWS Environment Check:', {
+  AWS_ACCESS_KEY: process.env.AWS_ACCESS_KEY ? `Set (${process.env.AWS_ACCESS_KEY.substring(0, 10)}...)` : 'Not set',
+  AWS_SECRET_ACCESS: process.env.AWS_SECRET_ACCESS ? 'Set' : 'Not set',
+});
+
 const s3 = new S3Client({
   region: "ap-northeast-2", // 사용자 사용 지역 (서울의 경우 ap-northeast-2)
   credentials: {
