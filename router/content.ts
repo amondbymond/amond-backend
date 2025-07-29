@@ -939,6 +939,13 @@ router.post("/notification/email", isLogin, async function (req, res) {
 
 // Brand summary generation endpoint
 router.post("/brand-summary", async function (req, res) {
+  // Set timeout for this endpoint
+  req.setTimeout(60000); // 60 seconds timeout
+  
+  // Ensure CORS headers are set early
+  res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  
   const userId = req.user?.id;
   const brandInput: BrandInput = req.body;
 
@@ -998,11 +1005,30 @@ router.post("/brand-summary", async function (req, res) {
 
     console.log('✅ DEBUG: Brand analysis completed successfully');
 
-    // Return the summary in the expected format
-    res.status(200).json({ 
+    // Check response size before sending
+    const responseData = { 
       summary: brandSummary.formattedText,
       data: brandSummary 
-    });
+    };
+    
+    const responseSize = JSON.stringify(responseData).length;
+    console.log(`📏 DEBUG: Response size: ${responseSize} bytes (${(responseSize / 1024 / 1024).toFixed(2)} MB)`);
+    
+    if (responseSize > 10 * 1024 * 1024) { // 10MB limit
+      console.warn('⚠️ WARNING: Response size exceeds 10MB, sending without image data');
+      // Remove base64 images from response if too large
+      const reducedData = {
+        ...responseData,
+        data: {
+          ...responseData.data,
+          imageAnalysis: 'Response too large - images omitted'
+        }
+      };
+      return res.status(200).json(reducedData);
+    }
+    
+    // Return the summary in the expected format
+    res.status(200).json(responseData);
 
   } catch (error) {
     console.error('❌ ERROR: Brand summary generation failed:', error);
