@@ -21,10 +21,31 @@ import moment from "moment-timezone";
 // ㅇ 프로젝트 (브랜드 정보)
 // 프로젝트 생성 - Allow both authenticated and non-authenticated users
 router.post("/project", async function (req, res) {
-  const userId = req.user?.id;
+  let userId = req.user?.id;
+  
+  // Check for session token if no userId from session
+  const sessionToken = req.headers['x-session-token'];
+  if (!userId && sessionToken) {
+    try {
+      const tokenSql = `SELECT id, grade, authType FROM user 
+                        WHERE sessionToken = ? 
+                        AND tokenUpdatedAt > DATE_SUB(NOW(), INTERVAL 30 DAY)`;
+      const tokenResult = await queryAsync(tokenSql, [sessionToken]);
+      
+      if (tokenResult.length > 0) {
+        userId = tokenResult[0].id;
+        req.user = tokenResult[0];
+        console.log("[Project Creation] Token authenticated user:", userId);
+      }
+    } catch (e) {
+      console.error("Session token verification error:", e);
+    }
+  }
+  
   console.log("Project creation debug:", {
     userId: userId,
     sessionId: req.session?.id,
+    sessionToken: sessionToken ? 'Present' : 'Missing',
     isAuthenticated: req.isAuthenticated ? req.isAuthenticated() : false,
     origin: req.headers.origin,
     cookie: req.headers.cookie ? 'Present' : 'Missing',

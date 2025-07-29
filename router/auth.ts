@@ -101,11 +101,22 @@ router.post("/login/email", (req: any, res, next) => {
           }
         });
 
+        // Generate a session token for incognito mode fallback
+        const sessionToken = req.sessionID; // Use session ID as token
+        
+        // Store the session token with user mapping
+        const tokenSql = `UPDATE user SET sessionToken = ?, tokenUpdatedAt = NOW() WHERE id = ?`;
+        await queryAsync(tokenSql, [sessionToken, user.id]);
+
         // 로그인 성공 후 전달할 데이터 (로그인 시, user 데이터 적용 하도록)
         const sql = `SELECT id, authType, grade FROM user WHERE id = "${user.id}"`;
         try {
           const result = await queryAsync(sql, [user.id]);
-          return res.status(200).json(result[0]);
+          // Include session token in response for incognito mode
+          return res.status(200).json({
+            ...result[0],
+            sessionToken: sessionToken
+          });
         } catch (e) {
           console.error(e);
           res.status(500).json({ error: e });
@@ -144,25 +155,54 @@ router.get(
 
 // 로그인 상태인지 체크
 router.get("/loginCheck", async function (req, res) {
+  let userId = req.user?.id;
+  const sessionToken = req.headers['x-session-token'] as string;
+  
   console.log("[loginCheck] Session check:", {
     sessionId: req.session?.id,
-    userId: req.user?.id,
+    userId: userId,
+    sessionToken: sessionToken ? 'Present' : 'Missing',
     isAuthenticated: req.isAuthenticated ? req.isAuthenticated() : false,
     origin: req.headers.origin,
     userAgent: req.headers['user-agent']?.includes('Safari') ? 'Safari' : 'Other',
     cookie: req.headers.cookie ? 'Present' : 'Missing',
   });
   
-  const userId = req.user?.id;
+  // If no userId from session, check for session token
+  if (!userId && sessionToken) {
+    try {
+      const tokenSql = `SELECT id, grade, authType FROM user 
+                        WHERE sessionToken = ? 
+                        AND tokenUpdatedAt > DATE_SUB(NOW(), INTERVAL 30 DAY)`;
+      const tokenResult = await queryAsync(tokenSql, [sessionToken]);
+      
+      if (tokenResult.length > 0) {
+        userId = tokenResult[0].id;
+        console.log("[loginCheck] Token authenticated user:", userId);
+      }
+    } catch (e) {
+      console.error("Session token check error:", e);
+    }
+  }
 
   if (userId) {
     try {
       const updateSql = `UPDATE user SET lastLoginAt = NOW() WHERE id = ?`;
       await queryAsync(updateSql, [userId]);
 
-      const sql = `SELECT id, grade, authType FROM user WHERE id = "${userId}"`;
+      const sql = `SELECT id, grade, authType FROM user WHERE id = ?`;
       const result = await queryAsync(sql, [userId]);
-      return res.status(200).json(result[0]);
+      
+      // Include session token for incognito mode support
+      const userData = result[0];
+      if (!sessionToken && req.sessionID) {
+        // Update session token in database
+        const tokenSql = `UPDATE user SET sessionToken = ?, tokenUpdatedAt = NOW() WHERE id = ?`;
+        await queryAsync(tokenSql, [req.sessionID, userId]);
+        userData.sessionToken = req.sessionID;
+      }
+      
+      return res.status(200).json(userData);
     } catch (e) {
       console.error(e);
       res.status(500).json({ error: e });
@@ -243,7 +283,19 @@ router.put("/changePassword", isLogin, async function (req, res) {
 });
 
 // 로그아웃
-router.post("/logout", function (req, res) {
+router.post("/logout", async function (req, res) {
+  const userId = req.user?.id;
+  
+  // Clear session token from database
+  if (userId) {
+    try {
+      const sql = `UPDATE user SET sessionToken = NULL, tokenUpdatedAt = NULL WHERE id = ?`;
+      await queryAsync(sql, [userId]);
+    } catch (e) {
+      console.error("Failed to clear session token:", e);
+    }
+  }
+  
   req.logout(function (err) {
     if (err) {
       res

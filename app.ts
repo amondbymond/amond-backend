@@ -32,6 +32,7 @@ app.use((req, res, next) => {
       origin: req.headers.origin,
       cookie: req.headers.cookie ? 'Present' : 'Missing',
       sessionID: req.sessionID,
+      sessionToken: req.headers['x-session-token'] ? 'Present' : 'Missing',
       userAgent: isSafari ? 'Safari' : 'Other',
       possibleIncognito: isSafari && isIncognito,
     });
@@ -40,6 +41,35 @@ app.use((req, res, next) => {
   // For Safari, we need to ensure the session is saved
   if (isSafari && req.session) {
     req.session.save();
+  }
+  
+  next();
+});
+
+// Global auth middleware to check session token
+app.use(async (req, res, next) => {
+  // Skip if user already authenticated via session
+  if (req.user?.id) {
+    return next();
+  }
+  
+  // Check for session token in headers
+  const sessionToken = req.headers['x-session-token'] as string;
+  if (sessionToken) {
+    try {
+      const { queryAsync } = await import("./module/commonFunction");
+      const sql = `SELECT id, grade, authType FROM user 
+                   WHERE sessionToken = ? 
+                   AND tokenUpdatedAt > DATE_SUB(NOW(), INTERVAL 30 DAY)`;
+      const result = await queryAsync(sql, [sessionToken]);
+      
+      if (result.length > 0) {
+        req.user = result[0];
+        console.log("[Global Auth] Token authenticated user:", result[0].id);
+      }
+    } catch (e) {
+      console.error("Global session token check error:", e);
+    }
   }
   
   next();
