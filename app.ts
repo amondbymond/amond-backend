@@ -24,17 +24,20 @@ initializePassport(app); // passport 초기화
 
 // Debug middleware for cookie issues
 app.use((req, res, next) => {
+  const isSafari = req.headers['user-agent']?.includes('Safari') && !req.headers['user-agent']?.includes('Chrome');
+  const isIncognito = !req.headers.cookie || req.headers.cookie === '';
+  
   if (req.path.includes('/auth/loginCheck') || req.path.includes('/content/project')) {
     console.log(`[Cookie Debug] ${req.method} ${req.path}:`, {
       origin: req.headers.origin,
       cookie: req.headers.cookie ? 'Present' : 'Missing',
       sessionID: req.sessionID,
-      userAgent: req.headers['user-agent']?.includes('Safari') ? 'Safari' : 'Other',
+      userAgent: isSafari ? 'Safari' : 'Other',
+      possibleIncognito: isSafari && isIncognito,
     });
   }
   
   // For Safari, we need to ensure the session is saved
-  const isSafari = req.headers['user-agent']?.includes('Safari') && !req.headers['user-agent']?.includes('Chrome');
   if (isSafari && req.session) {
     req.session.save();
   }
