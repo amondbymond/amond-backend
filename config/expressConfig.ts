@@ -9,10 +9,10 @@ const limiter = rateLimit({
 });
 
 export const setupExpress = (app: express.Express) => {
-  app.use(express.urlencoded({ extended: false }));
+  app.use(express.urlencoded({ extended: false, limit: "50mb" }));
   app.use(
     express.json({
-      limit: "20mb",
+      limit: "50mb",
     })
   );
 

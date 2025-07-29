@@ -14,7 +14,7 @@ import {
   gptImageEdit,
 } from "../module/aiApi";
 import { scrapeImagesController } from "../module/imageScraper";
-import { generateBrandChatter, type BrandInput } from "../module/brandAnalysis";
+import { generateBrandChatter } from "../module/brandAnalysis";
 import { checkAndSendNotifications } from "../module/emailNotificationSES";
 import moment from "moment-timezone";
 
@@ -911,6 +911,16 @@ async function checkLimitUpdate({
   return answer;
 }
 
+// Image scraping OPTIONS handler for preflight requests
+router.options("/scrape-images", function (req, res) {
+  const origin = req.headers.origin || 'https://main.dpvdj8dsmc7us.amplifyapp.com';
+  res.setHeader('Access-Control-Allow-Origin', origin);
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Cookie, x-session-token');
+  res.status(200).end();
+});
+
 // Image scraping endpoint
 router.post("/scrape-images", async function (req, res) {
   console.log('🔍 [SCRAPE-IMAGES] Request started');
@@ -964,8 +974,18 @@ router.post("/notification/email", isLogin, async function (req, res) {
 });
 
 
+// Brand summary OPTIONS handler for preflight requests
+router.options("/brand-summary", function (req, res) {
+  const origin = req.headers.origin || 'https://main.dpvdj8dsmc7us.amplifyapp.com';
+  res.setHeader('Access-Control-Allow-Origin', origin);
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Cookie, x-session-token');
+  res.status(200).end();
+});
+
 // Brand summary generation endpoint
-router.post("/brand-summary", async function (req, res) {
+router.post("/brand-summary", async function (req: any, res: any) {
   console.log('🔍 [BRAND-SUMMARY] Request started');
   console.log('🔍 [BRAND-SUMMARY] Headers:', {
     origin: req.headers.origin,
@@ -990,7 +1010,7 @@ router.post("/brand-summary", async function (req, res) {
   }
   
   const userId = req.user?.id;
-  const brandInput: BrandInput = req.body;
+  const brandInput = req.body;
 
   console.log('🚀 DEBUG: Brand summary request received');
   console.log('🚀 DEBUG: User ID:', userId);
@@ -1055,6 +1075,11 @@ router.post("/brand-summary", async function (req, res) {
     // Generate brand summary
     let brandSummary;
     try {
+      console.log('📊 [BRAND-SUMMARY] Calling generateBrandChatter with:', {
+        brandName: brandInput.brandName,
+        userName,
+        hasApiKey: !!openaiApiKey
+      });
       brandSummary = await generateBrandChatter(brandInput, userName, openaiApiKey);
     } catch (genError) {
       console.error('❌ [BRAND-SUMMARY] generateBrandChatter failed:', genError);
