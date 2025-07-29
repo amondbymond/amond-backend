@@ -22,7 +22,14 @@ import moment from "moment-timezone";
 // 프로젝트 생성 - Allow both authenticated and non-authenticated users
 router.post("/project", async function (req, res) {
   const userId = req.user?.id;
-  console.log("Project creation - userId:", userId, "session:", req.session?.id);
+  console.log("Project creation debug:", {
+    userId: userId,
+    sessionId: req.session?.id,
+    isAuthenticated: req.isAuthenticated ? req.isAuthenticated() : false,
+    origin: req.headers.origin,
+    cookie: req.headers.cookie ? 'Present' : 'Missing',
+    userAgent: req.headers['user-agent']?.includes('Safari') ? 'Safari' : 'Other',
+  });
   const { name, category, url, reasonList, description, imageNameList } =
     req.body;
 

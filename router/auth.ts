@@ -87,6 +87,20 @@ router.post("/login/email", (req: any, res, next) => {
           req.session.cookie.maxAge = 60 * 60 * 1000 * 24 * 1; // 1일
         }
 
+        console.log("[Email Login] Login successful:", {
+          userId: user.id,
+          sessionId: req.session?.id,
+          cookie: req.headers.cookie ? 'Present' : 'Missing',
+          userAgent: req.headers['user-agent']?.includes('Safari') ? 'Safari' : 'Other',
+        });
+
+        // Force session save for incognito mode
+        req.session.save((saveErr) => {
+          if (saveErr) {
+            console.error("[Email Login] Session save error:", saveErr);
+          }
+        });
+
         // 로그인 성공 후 전달할 데이터 (로그인 시, user 데이터 적용 하도록)
         const sql = `SELECT id, authType, grade FROM user WHERE id = "${user.id}"`;
         try {
@@ -130,6 +144,15 @@ router.get(
 
 // 로그인 상태인지 체크
 router.get("/loginCheck", async function (req, res) {
+  console.log("[loginCheck] Session check:", {
+    sessionId: req.session?.id,
+    userId: req.user?.id,
+    isAuthenticated: req.isAuthenticated ? req.isAuthenticated() : false,
+    origin: req.headers.origin,
+    userAgent: req.headers['user-agent']?.includes('Safari') ? 'Safari' : 'Other',
+    cookie: req.headers.cookie ? 'Present' : 'Missing',
+  });
+  
   const userId = req.user?.id;
 
   if (userId) {
