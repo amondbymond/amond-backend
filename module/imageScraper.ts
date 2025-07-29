@@ -473,25 +473,19 @@ const handleGeneralWebsite = async (url: string): Promise<string[]> => {
  * Main controller for the /content/scrape-images endpoint.
  */
 export const scrapeImagesController = async (req: Request, res: Response) => {
-    // Set timeout for this endpoint
-    req.setTimeout(60000); // 60 seconds timeout
-    
-    // Ensure CORS headers are set early
-    res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
-    res.setHeader('Access-Control-Allow-Credentials', 'true');
-    
     const { url } = req.body;
+    
+    console.log('🚀 [SCRAPE-IMAGES] Processing URL:', url);
 
     if (!url) {
         return res.status(400).json({ error: 'URL is required.' });
     }
 
-    // Add this to your scrapeImagesController
-console.log('Environment check:', {
-    NODE_ENV: process.env.NODE_ENV,
-    CHROME_BIN: process.env.CHROME_BIN,
-    YOUTUBE_API_KEY: process.env.YOUTUBE_API_KEY ? 'Present' : 'Missing'
-});
+    console.log('🔍 [SCRAPE-IMAGES] Environment check:', {
+        NODE_ENV: process.env.NODE_ENV,
+        CHROME_BIN: process.env.CHROME_BIN,
+        YOUTUBE_API_KEY: process.env.YOUTUBE_API_KEY ? 'Present' : 'Missing'
+    });
 
     try {
         let imageUrls: string[] = [];
@@ -543,22 +537,25 @@ console.log('Environment check:', {
         // Check response size before sending
         const responseData = { images: finalImages };
         const responseSize = JSON.stringify(responseData).length;
-        console.log(`📏 Image scraper response size: ${responseSize} bytes (${(responseSize / 1024 / 1024).toFixed(2)} MB)`);
+        console.log(`📏 [SCRAPE-IMAGES] Response size: ${responseSize} bytes (${(responseSize / 1024 / 1024).toFixed(2)} MB)`);
+        console.log(`📸 [SCRAPE-IMAGES] Image count: ${finalImages.length}`);
         
         if (responseSize > 10 * 1024 * 1024) { // 10MB limit
-            console.warn(`⚠️ WARNING: Image response size exceeds 10MB (${finalImages.length} images)`);
+            console.warn(`⚠️ [SCRAPE-IMAGES] WARNING: Response size exceeds 10MB (${finalImages.length} images)`);
             // Limit the number of images if response is too large
             const limitedImages = finalImages.slice(0, 5);
+            console.log(`🔄 [SCRAPE-IMAGES] Limiting to 5 images to reduce response size`);
             return res.status(200).json({ 
                 images: limitedImages,
                 warning: 'Response size limit reached. Only returning first 5 images.'
             });
         }
         
+        console.log('✅ [SCRAPE-IMAGES] Sending successful response');
         res.status(200).json({ images: finalImages });
 
     } catch (error) {
-        console.error('Scraping failed with detailed error:', {
+        console.error('❌ [SCRAPE-IMAGES] Scraping failed:', {
             message: error instanceof Error ? error.message : 'Unknown error',
             stack: error instanceof Error ? error.stack : undefined,
             url: url
@@ -577,6 +574,7 @@ console.log('Environment check:', {
             }
         }
         
+        console.log('🔴 [SCRAPE-IMAGES] Sending error response');
         res.status(500).json({ error: errorMessage });
     }
 };

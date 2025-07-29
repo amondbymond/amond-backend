@@ -912,7 +912,34 @@ async function checkLimitUpdate({
 }
 
 // Image scraping endpoint
-router.post("/scrape-images", scrapeImagesController);
+router.post("/scrape-images", async function (req, res) {
+  console.log('🔍 [SCRAPE-IMAGES] Request started');
+  console.log('🔍 [SCRAPE-IMAGES] Headers:', {
+    origin: req.headers.origin,
+    'content-type': req.headers['content-type'],
+    'content-length': req.headers['content-length'],
+    'x-session-token': req.headers['x-session-token'] ? 'Present' : 'Missing'
+  });
+  
+  // Set timeout for this endpoint
+  req.setTimeout(120000); // 2 minutes timeout
+  res.setTimeout(120000); // 2 minutes timeout
+  
+  // Ensure CORS headers are set early
+  try {
+    const origin = req.headers.origin || 'https://main.dpvdj8dsmc7us.amplifyapp.com';
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Cookie, x-session-token');
+    console.log('✅ [SCRAPE-IMAGES] CORS headers set successfully');
+  } catch (corsError) {
+    console.error('❌ [SCRAPE-IMAGES] Failed to set CORS headers:', corsError);
+  }
+  
+  // Call the original controller
+  return scrapeImagesController(req, res);
+});
 
 // Email notification endpoint
 router.post("/notification/email", isLogin, async function (req, res) {
@@ -939,12 +966,28 @@ router.post("/notification/email", isLogin, async function (req, res) {
 
 // Brand summary generation endpoint
 router.post("/brand-summary", async function (req, res) {
+  console.log('🔍 [BRAND-SUMMARY] Request started');
+  console.log('🔍 [BRAND-SUMMARY] Headers:', {
+    origin: req.headers.origin,
+    'content-type': req.headers['content-type'],
+    'content-length': req.headers['content-length'],
+    'x-session-token': req.headers['x-session-token'] ? 'Present' : 'Missing'
+  });
+  
   // Set timeout for this endpoint
   req.setTimeout(60000); // 60 seconds timeout
   
   // Ensure CORS headers are set early
-  res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  try {
+    const origin = req.headers.origin || 'https://main.dpvdj8dsmc7us.amplifyapp.com';
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Cookie, x-session-token');
+    console.log('✅ [BRAND-SUMMARY] CORS headers set successfully');
+  } catch (corsError) {
+    console.error('❌ [BRAND-SUMMARY] Failed to set CORS headers:', corsError);
+  }
   
   const userId = req.user?.id;
   const brandInput: BrandInput = req.body;
@@ -1000,8 +1043,23 @@ router.post("/brand-summary", async function (req, res) {
 
     console.log('✅ DEBUG: Starting brand analysis with OpenAI');
     
+    // Check request body size
+    const requestBodySize = JSON.stringify(brandInput).length;
+    console.log(`📏 [BRAND-SUMMARY] Request body size: ${requestBodySize} bytes (${(requestBodySize / 1024 / 1024).toFixed(2)} MB)`);
+    
+    if (requestBodySize > 50 * 1024 * 1024) { // 50MB request limit
+      console.error('❌ [BRAND-SUMMARY] Request body too large');
+      return res.status(413).json({ error: 'Request body too large. Please select fewer images.' });
+    }
+    
     // Generate brand summary
-    const brandSummary = await generateBrandChatter(brandInput, userName, openaiApiKey);
+    let brandSummary;
+    try {
+      brandSummary = await generateBrandChatter(brandInput, userName, openaiApiKey);
+    } catch (genError) {
+      console.error('❌ [BRAND-SUMMARY] generateBrandChatter failed:', genError);
+      throw genError;
+    }
 
     console.log('✅ DEBUG: Brand analysis completed successfully');
 
@@ -1037,6 +1095,22 @@ router.post("/brand-summary", async function (req, res) {
       stack: error instanceof Error ? error.stack : 'No stack trace',
       name: error instanceof Error ? error.name : 'Unknown error type'
     });
+    
+    // Check if headers were already sent
+    if (res.headersSent) {
+      console.error('❌ [BRAND-SUMMARY] Headers were already sent!');
+      return;
+    }
+    
+    // Try to send error response with CORS headers
+    try {
+      const origin = req.headers.origin || 'https://main.dpvdj8dsmc7us.amplifyapp.com';
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+    } catch (e) {
+      console.error('❌ [BRAND-SUMMARY] Could not set CORS headers in error handler');
+    }
+    
     res.status(500).json({ 
       error: '브랜드 분석 중 오류가 발생했습니다.',
       details: error instanceof Error ? error.message : 'Unknown error'
