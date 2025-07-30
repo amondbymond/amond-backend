@@ -1027,7 +1027,7 @@ router.post("/brand-summary", async function (req: any, res: any) {
 
   if (brandInput.selectedImages && brandInput.selectedImages.length > 0) {
     console.log('📸 DEBUG: Selected images details:');
-    brandInput.selectedImages.forEach((image, index) => {
+    brandInput.selectedImages.forEach((image: any, index: number) => {
       console.log(`📸 DEBUG: Image ${index + 1}:`, {
         fileName: image.fileName,
         type: image.type,
