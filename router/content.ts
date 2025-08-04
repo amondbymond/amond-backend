@@ -42,17 +42,21 @@ router.post("/project", async function (req, res) {
     }
   }
   
-  console.log("Project creation debug:", {
-    userId: userId,
-    sessionId: req.session?.id,
-    sessionToken: sessionToken ? 'Present' : 'Missing',
-    isAuthenticated: req.isAuthenticated ? req.isAuthenticated() : false,
-    origin: req.headers.origin,
-    cookie: req.headers.cookie ? 'Present' : 'Missing',
-    userAgent: req.headers['user-agent']?.includes('Safari') ? 'Safari' : 'Other',
-  });
-  const { name, category, url, reasonList, description, imageNameList } =
-    req.body;
+  // Commented out project creation debug logs
+  // console.log("Project creation debug:", {
+  //   userId: userId,
+  //   sessionId: req.session?.id,
+  //   sessionToken: sessionToken ? 'Present' : 'Missing',
+  //   isAuthenticated: req.isAuthenticated ? req.isAuthenticated() : false,
+  //   origin: req.headers.origin,
+  //   cookie: req.headers.cookie ? 'Present' : 'Missing',
+  //   userAgent: req.headers['user-agent']?.includes('Safari') ? 'Safari' : 'Other',
+  // });
+  const { 
+    name, category, url, reasonList, description, imageNameList,
+    advantages, coreProduct, coreProductDetail, targetAudience, targetAudienceDetail,
+    mainColor, selectedContentTypes, brandAnalysis
+  } = req.body;
 
   try {
     const presignedUrlList = [];
@@ -66,9 +70,46 @@ router.post("/project", async function (req, res) {
       entireDirectoryList.push(entireDirectory);
     }
 
+    // First, check if a brand with this name exists for the user
+    let brandId = null;
+    if (userId) {
+      const existingBrand = await queryAsync(
+        `SELECT id FROM brand WHERE name = ? AND fk_userId = ?`,
+        [name, userId]
+      );
+      
+      if (existingBrand.length === 0) {
+        // Create a new brand with additional fields
+        const brandResult = await queryAsync(
+          `INSERT INTO brand(
+            name, category, url, description, fk_userId,
+            advantages, coreProduct, coreProductDetail, 
+            targetAudience, targetAudienceDetail,
+            mainColor, selectedContentTypes, brandAnalysis
+          ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            name, category, url, description, userId,
+            advantages || null,
+            coreProduct || null,
+            coreProductDetail || null,
+            targetAudience || null,
+            targetAudienceDetail || null,
+            mainColor || null,
+            selectedContentTypes ? JSON.stringify(selectedContentTypes) : null,
+            brandAnalysis || null
+          ]
+        );
+        brandId = brandResult.insertId;
+        console.log(`[CREATE PROJECT] Created new brand: ${name} with ID: ${brandId}`);
+      } else {
+        brandId = existingBrand[0].id;
+        console.log(`[CREATE PROJECT] Using existing brand: ${name} with ID: ${brandId}`);
+      }
+    }
+
     const sessionName = `${name} - ${moment().format('YYYY-MM-DD HH:mm')}`;
-    const sql = `INSERT INTO project(name, sessionName, category, url, imageList, reasonList, description, fk_userId, createdAt, lastAccessedAt)
-      VALUES(?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`;
+    const sql = `INSERT INTO project(name, sessionName, category, url, imageList, reasonList, description, fk_userId, fk_brandId, createdAt, lastAccessedAt)
+      VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`;
     const sqlValues = [
       name,
       sessionName,
@@ -78,6 +119,7 @@ router.post("/project", async function (req, res) {
       reasonList.join(","),
       description,
       userId || null,
+      brandId,
     ];
     const result = await queryAsync(sql, sqlValues);
 
@@ -137,21 +179,32 @@ router.get("/project/sessions", isLogin, async function (req, res) {
   const userId = req.user?.id;
 
   try {
-    const sql = `SELECT id, name, sessionName, category, url, createdAt, lastAccessedAt, isActive 
-                 FROM project 
-                 WHERE fk_userId = ? 
-                 ORDER BY lastAccessedAt DESC, createdAt DESC`;
+    // Get all content requests with their project info
+    // Don't do any cleanup here - just return valid projects
+    const sql = `SELECT 
+                   cr.id as contentRequestId,
+                   cr.createdAt as contentRequestCreatedAt,
+                   p.id, p.name, p.sessionName, p.category, p.url, p.createdAt, p.lastAccessedAt, p.isActive 
+                 FROM contentrequest cr
+                 JOIN project p ON cr.fk_projectId = p.id
+                 WHERE p.fk_userId = ? 
+                 AND p.name != 'ff'
+                 AND p.name != ''
+                 AND p.name IS NOT NULL
+                 AND p.fk_brandId IS NOT NULL
+                 ORDER BY cr.createdAt DESC`;
     const result = await queryAsync(sql, [userId]);
     
-    const sessions = result.map((project: any) => ({
-      projectId: createHashId(project.id),
-      name: project.name,
-      sessionName: project.sessionName || `${project.name} - ${moment(project.createdAt).format('YYYY-MM-DD HH:mm')}`,
-      category: project.category,
-      url: project.url,
-      createdAt: project.createdAt,
-      lastAccessedAt: project.lastAccessedAt,
-      isActive: project.isActive,
+    const sessions = result.map((row: any) => ({
+      projectId: createHashId(row.id) + '_cr' + row.contentRequestId, // Unique ID for each content request
+      name: row.name,
+      sessionName: row.sessionName || `${row.name} - ${moment(row.contentRequestCreatedAt).format('YYYY-MM-DD HH:mm')}`,
+      category: row.category,
+      url: row.url,
+      createdAt: row.contentRequestCreatedAt, // Use content request creation date
+      lastAccessedAt: row.lastAccessedAt,
+      isActive: row.isActive,
+      contentRequestId: row.contentRequestId, // Keep track of the actual content request
     }));
 
     res.status(200).json({ sessions });
@@ -207,12 +260,17 @@ router.put("/project/session/rename", isLogin, async function (req, res) {
 // 프로젝트 상세 정보
 router.get("/project/detail", isLogin, async function (req, res) {
   const userId = req.user?.id;
-  const { projectId } = req.query;
+  let { projectId } = req.query as { projectId: string };
 
   try {
+    // Extract base project ID if it contains content request suffix
+    if (projectId.includes('_cr')) {
+      projectId = projectId.split('_cr')[0];
+    }
+
     const sql = `SELECT * FROM project WHERE id = ? && fk_userId = ?`;
     let result = await queryAsync(sql, [
-      decodeHashId(projectId as string),
+      decodeHashId(projectId),
       userId,
     ]);
 
@@ -225,7 +283,7 @@ router.get("/project/detail", isLogin, async function (req, res) {
     // Update last accessed time
     await queryAsync(
       `UPDATE project SET lastAccessedAt = NOW() WHERE id = ?`,
-      [decodeHashId(projectId as string)]
+      [decodeHashId(projectId)]
     );
 
     result[0].imageList = result[0].imageList.split(",");
@@ -233,7 +291,7 @@ router.get("/project/detail", isLogin, async function (req, res) {
 
     const contentRequestSql = `SELECT * FROM contentRequest WHERE fk_projectId = ?`;
     const contentRequestResult = await queryAsync(contentRequestSql, [
-      decodeHashId(projectId as string),
+      decodeHashId(projectId),
     ]);
     let needContentRequest = false;
     if (contentRequestResult.length === 0) {
@@ -300,7 +358,26 @@ router.put("/project", isLogin, async function (req, res) {
   } = req.body;
 
   try {
-    const sql = `UPDATE project SET name = ?, category = ?, url = ?, reasonList = ?, description = ?, imageList = ? WHERE id = ?`;
+    // Get current project info to update sessionName
+    const currentProject = await queryAsync(
+      "SELECT sessionName, createdAt FROM project WHERE id = ?",
+      [projectId]
+    );
+    
+    // Extract date from sessionName or use createdAt
+    let dateStr = "";
+    if (currentProject.length > 0) {
+      const sessionName = currentProject[0].sessionName;
+      if (sessionName && sessionName.includes(" - ")) {
+        dateStr = sessionName.split(" - ")[1];
+      } else {
+        dateStr = moment(currentProject[0].createdAt).format('YYYY-MM-DD HH:mm');
+      }
+    }
+    
+    // Update project with new sessionName
+    const newSessionName = `${name} - ${dateStr}`;
+    const sql = `UPDATE project SET name = ?, category = ?, url = ?, reasonList = ?, description = ?, imageList = ?, sessionName = ? WHERE id = ?`;
     await queryAsync(sql, [
       name,
       category,
@@ -308,8 +385,22 @@ router.put("/project", isLogin, async function (req, res) {
       reasonList.join(","),
       description,
       dbImageList.join(","),
+      newSessionName,
       projectId,
     ]);
+
+    // Also update the brand if this project has one
+    const projectResult = await queryAsync(
+      "SELECT fk_brandId FROM project WHERE id = ?",
+      [projectId]
+    );
+    
+    if (projectResult.length > 0 && projectResult[0].fk_brandId) {
+      const brandId = projectResult[0].fk_brandId;
+      const brandSql = `UPDATE brand SET name = ?, category = ?, url = ?, description = ?, updatedAt = NOW() WHERE id = ?`;
+      await queryAsync(brandSql, [name, category, url, description, brandId]);
+      console.log(`[CONTENT] Updated brand ${brandId} along with project ${projectId}`);
+    }
 
     if (deletedImageList.length !== 0) {
       for (const image of deletedImageList) {
@@ -326,11 +417,18 @@ router.put("/project", isLogin, async function (req, res) {
 
 // ㅇ 콘텐츠 생성 요청
 router.post("/request", isLogin, async function (req, res) {
-  const { projectData, contentSettings, projectId, requestType } = req.body;
+  let { projectData, contentSettings, projectId, requestType } = req.body;
   const userId = req.user?.id;
+  const imageConfigs = contentSettings.imageConfigs || [];
 
-  // 명시해야 정확한 개수로 생성
-  const contentsNum = parseInt(contentSettings.uploadCycle[2]) * 4;
+  // Extract base project ID if it contains content request suffix
+  if (projectId && projectId.includes('_cr')) {
+    projectId = projectId.split('_cr')[0];
+  }
+
+  // Fixed number of images per content request (feed set)
+  const IMAGES_PER_FEEDSET = 4; // Change this to 9 when needed
+  const contentsNum = IMAGES_PER_FEEDSET;
   // Remove video ratio logic - all content will be image content
   const imageNum = contentsNum;
   const videoNum = 0;
@@ -342,6 +440,46 @@ router.post("/request", isLogin, async function (req, res) {
     });
     if (limitCheck.isOverLimit) {
       return res.status(400).json({ message: limitCheck.message });
+    }
+
+    // Fetch brand data including selectedContentTypes and mainColor
+    const brandDataSql = `
+      SELECT b.selectedContentTypes, b.mainColor, b.advantages, b.coreProduct, b.targetAudience
+      FROM project p
+      LEFT JOIN brand b ON p.fk_brandId = b.id
+      WHERE p.id = ?
+    `;
+    const brandDataResult = await queryAsync(brandDataSql, [decodeHashId(projectId)]);
+    const brandData = brandDataResult[0] || {};
+    
+    // Parse selectedContentTypes from JSON
+    let selectedContentTypes = [];
+    try {
+      selectedContentTypes = brandData.selectedContentTypes ? JSON.parse(brandData.selectedContentTypes) : [];
+    } catch (e) {
+      console.log('[CONTENT] Failed to parse selectedContentTypes:', e);
+      selectedContentTypes = [];
+    }
+    
+    // Check if we should use content types at all
+    const noContentTypes = contentSettings.noContentTypes || false;
+    
+    // If imageConfigs provided, extract content types from them
+    if (imageConfigs.length > 0) {
+      selectedContentTypes = imageConfigs.map((config: any) => config.contentType || '방향성 없음');
+    } else if (!noContentTypes && selectedContentTypes.length === 0) {
+      // If no content types selected and not explicitly disabled, use default based on category
+      const CONTENT_TYPES: { [key: string]: string[] } = {
+        '뷰티/미용': ['효능 강조', '사용 후기', '신제품 소개', '이벤트'],
+        '미식/푸드': ['메뉴 소개', '후기 리그램', '시즌 메뉴', '할인 이벤트'],
+        '일상/트렌드': ['일상 공유', '감성 무드', '트렌드 밈', '팔로워 소통'],
+        '패션': ['착장 소개', '신상 오픈', '스타일링팁', '할인 공지'],
+        '자기개발': ['인사이트', '동기부여', '후기 인증', '강의 소개'],
+        '지식 콘텐츠': ['트렌드 요약', '뉴스 큐레이션', '카드뉴스', '인포그래픽'],
+        '건강/헬스': ['운동 루틴', '후기 사례', '클래스 안내', '식단 공유'],
+        '기타': ['서비스/상품 소개', '창업 스토리', '기능 강조', '팔로우 이벤트']
+      };
+      selectedContentTypes = (CONTENT_TYPES[projectData.category as string] || CONTENT_TYPES['기타']).slice(0, 4);
     }
 
     const webSearchPrompt = `사용자의 브랜드/상품명: ${projectData.name}
@@ -366,6 +504,22 @@ url: ${projectData.url}
       ...contentSettings,
       searchResult,
     });
+    
+    // Add content types information to the prompt
+    const hasValidContentTypes = selectedContentTypes.length > 0 && selectedContentTypes.some((ct: string) => ct && ct !== '방향성 없음');
+    if (hasValidContentTypes) {
+      prompt = prompt + `\n\n[콘텐츠 타입 가이드]\n이 브랜드는 다음 4가지 콘텐츠 타입으로 이미지를 제작합니다:\n- ${selectedContentTypes.join('\n- ')}\n\n각 콘텐츠는 위 타입 중 하나에 망춰 제작되어야 합니다.`;
+    }
+    
+    // Add main color hint if available
+    if (brandData.mainColor) {
+      prompt = prompt + `\n\n[브랜드 컬러]\n메인 컬러: ${brandData.mainColor} (이 색상을 테마로 활용하되, 모든 이미지가 같은 색일 필요는 없습니다)`;
+    }
+
+    // Add additional instructions if provided (for new feed set creation)
+    if (contentSettings.additionalInstructions) {
+      prompt = prompt + `\n\n[추가 요청사항]\n${contentSettings.additionalInstructions}\n`;
+    }
 
     prompt =
       prompt +
@@ -374,9 +528,9 @@ url: ${projectData.url}
         .format("YYYY-MM-DD")} 이야.
 다음 주 월요일부터 시작해서 4주간 ${
         contentSettings.uploadCycle
-      } 업로드 기준으로 콘텐츠 주제와 날짜를 생성해줘. 즉, 개수는 ${contentsNum}개 인거지.
-그리고 날짜는 무조건 이렇게 구성해줘! 주 1회는 수, 주 2회는 월/수, 주 3회는 월/수/금, 주4회는 월/수/금/토!
-* 개수와 날짜 구성 꼭 참고해서 해줘!
+      } 업로드 기준으로 콘텐츠를 생성해줘. 
+총 ${contentsNum}개의 콘텐츠를 생성하되, 업로드 주기에 맞춰 적절히 분배해줘.
+예: 주 1회면 4주에 걸쳐 매주 1개씩, 주 2회면 2주에 걸쳐 주당 2개씩 등으로 배분해줘.
 
 ㅇ json은 subjectList, dateList로 구성해줘. 둘 다 ${contentsNum}개의 데이터가 들어가야 해. 둘 다 배열로 구성해줘.
 - subjectList: 업로드 주기에 맞춰 콘텐츠 주제를 생성해줘. 모든 콘텐츠는 이미지 콘텐츠입니다.
@@ -398,9 +552,9 @@ url: ${projectData.url}
     const dateList = subjectResult.message.dateList;
     const subjectToken = subjectResult.totalToken;
 
-    // 콘텐츠 요청
-    const contentRequestSql = `INSERT INTO contentRequest(trendIssue, snsEvent, essentialKeyword, competitor, uploadCycle, toneMannerList, directionList, searchResult, searchToken, subjectToken, createdAt, fk_projectId)
-    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?);`;
+    // 콘텐츠 요청 - store selectedContentTypes instead of directionList
+    const contentRequestSql = `INSERT INTO contentRequest(trendIssue, snsEvent, essentialKeyword, competitor, uploadCycle, toneMannerList, directionList, searchResult, searchToken, subjectToken, mainColor, createdAt, fk_projectId)
+    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?);`;
     const contentRequestResult = await queryAsync(contentRequestSql, [
       contentSettings.trendIssue || null,
       contentSettings.snsEvent || null,
@@ -408,30 +562,46 @@ url: ${projectData.url}
       contentSettings.competitor || null,
       contentSettings.uploadCycle,
       JSON.stringify(contentSettings.toneMannerList || []),
-      JSON.stringify(contentSettings.directionList || []),
+      JSON.stringify(selectedContentTypes), // Store content types as directionList
       searchResult?.slice(0, 800) || null,
       searchToken,
       subjectToken,
+      brandData.mainColor || null,
       decodeHashId(projectId),
     ]);
 
     const contentRequestId = contentRequestResult.insertId;
 
-    // Get the directionList from contentSettings
-    const directionList = contentSettings.contentDirections || contentSettings.directionList || [];
-
+    // Use selectedContentTypes for content creation
     for (let i = 0; i < subjectList.length; i++) {
       const subject = subjectList[i];
       const date = dateList[i];
-      // Assign direction to each content item (cycle through the directionList)
-      const direction = directionList[i % directionList.length] || "정보형";
+      let contentType = null;
+      let snsEvent = false;
+      let imageSize = '1:1';
+      let additionalText = '';
+      
+      // Extract from imageConfigs if available
+      if (imageConfigs.length > 0 && imageConfigs[i]) {
+        const config = imageConfigs[i];
+        contentType = config.contentType === '방향성 없음' ? null : config.contentType;
+        snsEvent = config.snsEvent || false;
+        imageSize = config.imageSize || '1:1';
+        additionalText = config.additionalText || '';
+      } else if (selectedContentTypes.length > 0) {
+        // Fallback to cycling through content types
+        contentType = selectedContentTypes[i % selectedContentTypes.length] || selectedContentTypes[0] || "서비스/상품 소개";
+      }
 
-      const contentSql = `INSERT INTO content(postDate, subject, direction, fk_contentRequestId)
-      VALUES(?, ?, ?, ?);`;
+      const contentSql = `INSERT INTO content(postDate, subject, direction, snsEvent, imageSize, additionalText, fk_contentRequestId)
+      VALUES(?, ?, ?, ?, ?, ?, ?);`;
       await queryAsync(contentSql, [
         date,
         subject?.slice(0, 60) || null,
-        direction,
+        contentType, // Store content type in direction field (null if no content types)
+        snsEvent,
+        imageSize,
+        additionalText,
         contentRequestId,
       ]);
     }
@@ -451,8 +621,13 @@ url: ${projectData.url}
 // 콘텐츠 생성 (1차에서 생성한 주제를 바탕으로 실제 콘텐츠 생성 - 2차 프롬프트 활용)
 async function createContent(contentRequestId: number) {
   try {
-    const contentSql = `SELECT id, subject, aiPrompt, imageUrl FROM content WHERE fk_contentRequestId = ?`;
+    const contentSql = `SELECT id, subject, direction, snsEvent, imageSize, additionalText, aiPrompt, imageUrl FROM content WHERE fk_contentRequestId = ?`;
     const contentResult = await queryAsync(contentSql, [contentRequestId]);
+    
+    // Get mainColor from contentRequest
+    const contentRequestSql = `SELECT mainColor FROM contentRequest WHERE id = ?`;
+    const contentRequestResult = await queryAsync(contentRequestSql, [contentRequestId]);
+    const mainColor = contentRequestResult[0]?.mainColor || null;
 
     const ogSecondPrompt = await loadPrompt("2차", { contentRequestId });
 
@@ -467,10 +642,14 @@ async function createContent(contentRequestId: number) {
           async (content: {
             id: number;
             subject: string;
+            direction: string;
+            snsEvent: boolean;
+            imageSize: string;
+            additionalText: string;
             aiPrompt: string | null;
             imageUrl: string | null;
           }) => {
-            const { id, subject, aiPrompt, imageUrl } = content;
+            const { id, subject, direction, snsEvent, imageSize, additionalText, aiPrompt, imageUrl } = content;
 
             // 이미지까지 생성한 경우는, 완료된 것이므로 제외. (혹시 모를 중복 생성 등)
             if (!imageUrl) {
@@ -480,6 +659,26 @@ async function createContent(contentRequestId: number) {
                   "{contentSubject}",
                   subject
                 );
+                
+                // Add content type information if available
+                if (direction) {
+                  currentPrompt = currentPrompt + `\n\n[콘텐츠 타입]\n이 콘텐츠는 "${direction}" 타입으로 제작되어야 합니다.`;
+                }
+                
+                // Add SNS event information
+                if (snsEvent) {
+                  currentPrompt = currentPrompt + `\n\n[SNS 이벤트]\n이 콘텐츠는 SNS 이벤트를 강조하는 형태로 제작해주세요. 팔로우, 좋아요, 공유 등을 유도하는 이벤트 요소를 포함해주세요.`;
+                }
+                
+                // Add individual additional text if available
+                if (additionalText) {
+                  currentPrompt = currentPrompt + `\n\n[개별 요청사항]\n${additionalText}`;
+                }
+                
+                // Add main color hint if available
+                if (mainColor) {
+                  currentPrompt = currentPrompt + `\n\n[브랜드 컬러]\n메인 컬러: ${mainColor} (이 색상을 테마로 활용하되, 자연스럽게 적용해주세요)`;
+                }
 
                 // Remove video script logic - all content is image content
                 currentPrompt =
@@ -490,7 +689,7 @@ async function createContent(contentRequestId: number) {
 필요한 내용은 이미지를 생성하기 위한 프롬프트, 캡션입니다.
 
 ㅇ JSON 형식으로 생성해주는데 aiPrompt, caption로 구성해줘.
-- aiPrompt는 내용을 바탕으로 이미지 프롬프트를 작성해줘. 영문으로 작성해줘!
+- aiPrompt는 내용을 바탕으로 이미지 프롬프트를 작성해줘. 영문으로 작성해줘! 콘텐츠 타입과 브랜드 컬러를 반영해서 작성해줘.
 - caption은 내용을 바탕으로 잘 작성해줘. 해시태그까지 포함해서 평문으로 쭉 작성해줘. 한글로 작성해줘!
 본문 내용이 길면 문단 구분도 잘 해줘! 그리고 뒷 부분에 해시태그를 나열할 때는 두 번 줄바꿈하고 작성해줘!`;
 
@@ -542,12 +741,24 @@ async function createContent(contentRequestId: number) {
 // 이미지 생성 (2차에서 생성한 aiPrompt를 바탕으로 이미지 생성)
 export async function createImage(id: number) {
   try {
-    const contentSql = `SELECT a.aiPrompt, b.imageRatio, c.imageList FROM content a
+    const contentSql = `SELECT a.aiPrompt, a.direction, a.imageSize, a.snsEvent, b.mainColor, c.imageList FROM content a
       LEFT JOIN contentRequest b ON a.fk_contentRequestId = b.id
       LEFT JOIN project c ON b.fk_projectId = c.id
       WHERE a.id = ?`;
     const contentResult = await queryAsync(contentSql, [id]);
-    const { aiPrompt, imageRatio, imageList } = contentResult[0];
+    const { aiPrompt, direction, imageSize, snsEvent, mainColor, imageList } = contentResult[0];
+    
+    // Use individual imageSize if specified, otherwise use project default
+    const imageRatio = imageSize || '1:1';
+    
+    // Enhance AI prompt with content type and color information
+    let enhancedPrompt = aiPrompt;
+    if (mainColor && !aiPrompt.toLowerCase().includes(mainColor.toLowerCase())) {
+      // Extract hex color if mainColor is in format "Color Name, #HEX"
+      const hexMatch = mainColor.match(/#[0-9A-Fa-f]{6}/);
+      const colorHint = hexMatch ? hexMatch[0] : mainColor;
+      enhancedPrompt = `${aiPrompt}. Use ${mainColor} as a theme color accent in the design.`;
+    }
 
     let imageUrl = "";
     let imageToken = 0;
@@ -560,7 +771,7 @@ export async function createImage(id: number) {
       try {
         if (imageList === "") {
           const imageResult = await gptImageCreate({
-            prompt: aiPrompt,
+            prompt: enhancedPrompt,
             saveImageName: `${createHashId(id)}`,
             size:
               imageRatio === "2:3"
@@ -580,7 +791,7 @@ export async function createImage(id: number) {
 
           const imageResult = await gptImageEdit({
             imageUrl: selectedImage,
-            prompt: aiPrompt,
+            prompt: enhancedPrompt,
             saveImageName: `${createHashId(id)}`,
             size: imageRatio === "1:1" ? "1024x1024" : "1024x1536",
           });
@@ -641,15 +852,20 @@ export async function createImage(id: number) {
 
 // 요청 조회
 router.get("/request", isLogin, async function (req, res) {
-  const { projectId } = req.query;
+  let { projectId } = req.query as { projectId: string };
 
   try {
+    // Extract base project ID if it contains content request suffix
+    if (projectId.includes('_cr')) {
+      projectId = projectId.split('_cr')[0];
+    }
+
     const contentRequestSql = `SELECT id FROM contentRequest
       WHERE fk_projectId = ?
       ORDER BY id DESC
       LIMIT 1`;
     const contentRequestResult = await queryAsync(contentRequestSql, [
-      decodeHashId(projectId as string),
+      decodeHashId(projectId),
     ]);
 
     res
@@ -871,7 +1087,9 @@ async function checkLimitUpdate({
 
     // 없는 경우, 로그 생성
     if (limitCheckResult.length === 0) {
-      const insertSql = `INSERT INTO regenerateLog(fk_userId, \`${requestType}\`, createdAt) VALUES(?, ?, NOW())`;
+      // For auto generation, use 'all' column
+      const columnName = requestType === 'auto' ? 'all' : requestType;
+      const insertSql = `INSERT INTO regenerateLog(fk_userId, \`${columnName}\`, createdAt) VALUES(?, ?, NOW())`;
       await queryAsync(insertSql, [userId, 1]);
 
       return {
@@ -951,27 +1169,6 @@ router.post("/scrape-images", async function (req, res) {
   return scrapeImagesController(req, res);
 });
 
-// Email notification endpoint
-router.post("/notification/email", isLogin, async function (req, res) {
-  const { email, contentRequestId } = req.body;
-  const userId = req.user?.id;
-
-  if (!email || !contentRequestId) {
-    return res.status(400).json({ message: "이메일과 콘텐츠 요청 ID가 필요합니다." });
-  }
-
-  try {
-    // Store email notification request in database
-    const sql = `INSERT INTO emailNotification (fk_userId, fk_contentRequestId, email, status, createdAt)
-      VALUES (?, ?, ?, 'pending', NOW())`;
-    await queryAsync(sql, [userId, contentRequestId, email]);
-
-    return res.status(200).json({ message: "이메일 알림이 설정되었습니다." });
-  } catch (e) {
-    console.error("Email notification error:", e);
-    return res.status(500).json({ message: "이메일 알림 설정 실패" });
-  }
-});
 
 
 // Brand summary OPTIONS handler for preflight requests
@@ -1140,6 +1337,149 @@ router.post("/brand-summary", async function (req: any, res: any) {
       error: '브랜드 분석 중 오류가 발생했습니다.',
       details: error instanceof Error ? error.message : 'Unknown error'
     });
+  }
+});
+
+// Delete content request (feed set) endpoint
+router.delete("/contentrequest/:contentRequestId", isLogin, async function (req, res) {
+  console.log('[DELETE CONTENT REQUEST] Request started:', req.params.contentRequestId);
+  
+  try {
+    const contentRequestId = parseInt(req.params.contentRequestId);
+    const userId = req.user?.id;
+    
+    // Verify ownership through project
+    const ownershipQuery = `
+      SELECT cr.id, p.fk_userId, p.id as projectId 
+      FROM contentRequest cr
+      JOIN project p ON cr.fk_projectId = p.id
+      WHERE cr.id = ?
+    `;
+    const result = await queryAsync(ownershipQuery, [contentRequestId]);
+    
+    if (!result || result.length === 0) {
+      return res.status(404).json({ error: '콘텐츠 요청을 찾을 수 없습니다.' });
+    }
+    
+    if (result[0].fk_userId !== userId) {
+      return res.status(403).json({ error: '삭제 권한이 없습니다.' });
+    }
+    
+    // Delete content first
+    await queryAsync(`DELETE FROM content WHERE fk_contentRequestId = ?`, [contentRequestId]);
+    
+    // Delete content request
+    await queryAsync(`DELETE FROM contentRequest WHERE id = ?`, [contentRequestId]);
+    
+    console.log(`[DELETE CONTENT REQUEST] Successfully deleted content request: ${contentRequestId}`);
+    res.status(200).json({ message: '피드셋이 성공적으로 삭제되었습니다.' });
+    
+  } catch (error) {
+    console.error('[DELETE CONTENT REQUEST] Error:', error);
+    res.status(500).json({ error: '피드셋 삭제 중 오류가 발생했습니다.' });
+  }
+});
+
+// Delete project endpoint
+router.delete("/project/:projectId", isLogin, async function (req, res) {
+  console.log('[DELETE PROJECT] Request started:', req.params.projectId);
+  
+  try {
+    // Extract base project ID if it contains content request suffix
+    let projectIdStr = req.params.projectId;
+    if (projectIdStr.includes('_cr')) {
+      projectIdStr = projectIdStr.split('_cr')[0];
+      console.log('[DELETE PROJECT] Extracted base project ID:', projectIdStr);
+    }
+    
+    const projectId = decodeHashId(projectIdStr);
+    const userId = req.user?.id;
+    
+    console.log('[DELETE PROJECT] Decoded projectId:', projectId);
+    console.log('[DELETE PROJECT] User ID:', userId);
+    
+    if (!userId) {
+      return res.status(401).json({ error: '로그인이 필요합니다.' });
+    }
+    
+    if (!projectId || projectId === null) {
+      return res.status(400).json({ error: '잘못된 프로젝트 ID입니다.' });
+    }
+    
+    // Verify project ownership
+    const ownershipQuery = `SELECT fk_userId, fk_brandId FROM project WHERE id = ?`;
+    const projectResult = await queryAsync(ownershipQuery, [projectId]);
+    
+    if (!projectResult || projectResult.length === 0) {
+      return res.status(404).json({ error: '프로젝트를 찾을 수 없습니다.' });
+    }
+    
+    if (projectResult[0].fk_userId !== userId) {
+      return res.status(403).json({ error: '프로젝트 삭제 권한이 없습니다.' });
+    }
+    
+    const brandId = projectResult[0].fk_brandId;
+    
+    // Delete related data in order (to respect foreign key constraints)
+    // 1. Delete from notification table (if it exists)
+    try {
+      await queryAsync(`DELETE FROM notification WHERE fk_projectId = ?`, [projectId]);
+    } catch (e: any) {
+      if (e.code !== 'ER_NO_SUCH_TABLE') {
+        throw e;
+      }
+      console.log('[DELETE PROJECT] Notification table does not exist, skipping...');
+    }
+    
+    // 2. Delete from request table (if it exists)
+    try {
+      await queryAsync(`DELETE FROM request WHERE fk_projectId = ?`, [projectId]);
+    } catch (e: any) {
+      if (e.code !== 'ER_NO_SUCH_TABLE') {
+        throw e;
+      }
+      console.log('[DELETE PROJECT] Request table does not exist, skipping...');
+    }
+    
+    // 3. Delete from content table first (references contentrequest)
+    try {
+      // First find all contentrequest IDs for this project
+      const contentRequests = await queryAsync(
+        `SELECT id FROM contentrequest WHERE fk_projectId = ?`,
+        [projectId]
+      );
+      
+      // Delete content entries that reference these contentrequest IDs
+      for (const cr of contentRequests) {
+        await queryAsync(`DELETE FROM content WHERE fk_contentRequestId = ?`, [cr.id]);
+      }
+      console.log('[DELETE PROJECT] Deleted from content table');
+    } catch (e: any) {
+      if (e.code === 'ER_NO_SUCH_TABLE') {
+        console.log('[DELETE PROJECT] Content or contentrequest table does not exist, skipping...');
+      }
+    }
+    
+    // 4. Delete from contentrequest table (if it exists)
+    try {
+      await queryAsync(`DELETE FROM contentrequest WHERE fk_projectId = ?`, [projectId]);
+      console.log('[DELETE PROJECT] Deleted from contentrequest table');
+    } catch (e: any) {
+      if (e.code !== 'ER_NO_SUCH_TABLE') {
+        throw e;
+      }
+      console.log('[DELETE PROJECT] Contentrequest table does not exist, skipping...');
+    }
+    
+    // 5. Delete from project table
+    await queryAsync(`DELETE FROM project WHERE id = ?`, [projectId]);
+    
+    console.log(`[DELETE PROJECT] Successfully deleted project: ${projectId}`);
+    res.status(200).json({ message: '프로젝트가 성공적으로 삭제되었습니다.' });
+    
+  } catch (error) {
+    console.error('[DELETE PROJECT] Error:', error);
+    res.status(500).json({ error: '프로젝트 삭제 중 오류가 발생했습니다.' });
   }
 });
 

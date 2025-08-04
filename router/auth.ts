@@ -95,7 +95,7 @@ router.post("/login/email", (req: any, res, next) => {
         });
 
         // Force session save for incognito mode
-        req.session.save((saveErr) => {
+        req.session.save((saveErr: any) => {
           if (saveErr) {
             console.error("[Email Login] Session save error:", saveErr);
           }
@@ -158,22 +158,39 @@ router.get("/loginCheck", async function (req, res) {
   let userId = req.user?.id;
   const sessionToken = req.headers['x-session-token'] as string;
   
-  console.log("[loginCheck] Session check:", {
-    sessionId: req.session?.id,
-    userId: userId,
-    sessionToken: sessionToken ? 'Present' : 'Missing',
-    isAuthenticated: req.isAuthenticated ? req.isAuthenticated() : false,
-    origin: req.headers.origin,
-    userAgent: req.headers['user-agent']?.includes('Safari') ? 'Safari' : 'Other',
-    cookie: req.headers.cookie ? 'Present' : 'Missing',
-  });
+  // Commented out login check debug logs
+  // console.log("[loginCheck] Session check:", {
+  //   sessionId: req.session?.id,
+  //   userId: userId,
+  //   sessionToken: sessionToken ? 'Present' : 'Missing',
+  //   isAuthenticated: req.isAuthenticated ? req.isAuthenticated() : false,
+  //   origin: req.headers.origin,
+  //   userAgent: req.headers['user-agent']?.includes('Safari') ? 'Safari' : 'Other',
+  //   cookie: req.headers.cookie ? 'Present' : 'Missing',
+  // });
   
   // If no userId from session, check for session token
   if (!userId && sessionToken) {
     try {
-      const tokenSql = `SELECT id, grade, authType FROM user 
-                        WHERE sessionToken = ? 
-                        AND tokenUpdatedAt > DATE_SUB(NOW(), INTERVAL 30 DAY)`;
+      // Check if name column exists first
+      const columnCheckSql = `
+        SELECT COLUMN_NAME 
+        FROM INFORMATION_SCHEMA.COLUMNS 
+        WHERE TABLE_NAME = 'user' 
+        AND COLUMN_NAME = 'name'
+        AND TABLE_SCHEMA = DATABASE()
+      `;
+      
+      const columnExists = await queryAsync(columnCheckSql, []);
+      const hasNameColumn = columnExists.length > 0;
+      
+      const tokenSql = hasNameColumn 
+        ? `SELECT id, grade, authType, name FROM user 
+           WHERE sessionToken = ? 
+           AND tokenUpdatedAt > DATE_SUB(NOW(), INTERVAL 30 DAY)`
+        : `SELECT id, grade, authType FROM user 
+           WHERE sessionToken = ? 
+           AND tokenUpdatedAt > DATE_SUB(NOW(), INTERVAL 30 DAY)`;
       const tokenResult = await queryAsync(tokenSql, [sessionToken]);
       
       if (tokenResult.length > 0) {
@@ -190,7 +207,21 @@ router.get("/loginCheck", async function (req, res) {
       const updateSql = `UPDATE user SET lastLoginAt = NOW() WHERE id = ?`;
       await queryAsync(updateSql, [userId]);
 
-      const sql = `SELECT id, grade, authType FROM user WHERE id = ?`;
+      // Check if name column exists
+      const columnCheckSql = `
+        SELECT COLUMN_NAME 
+        FROM INFORMATION_SCHEMA.COLUMNS 
+        WHERE TABLE_NAME = 'user' 
+        AND COLUMN_NAME = 'name'
+        AND TABLE_SCHEMA = DATABASE()
+      `;
+      
+      const columnExists = await queryAsync(columnCheckSql, []);
+      const hasNameColumn = columnExists.length > 0;
+      
+      const sql = hasNameColumn 
+        ? `SELECT id, grade, authType, name FROM user WHERE id = ?`
+        : `SELECT id, grade, authType FROM user WHERE id = ?`;
       const result = await queryAsync(sql, [userId]);
       
       // Include session token for incognito mode support
@@ -214,21 +245,43 @@ router.get("/loginCheck", async function (req, res) {
 
 // 사용자 정보 조회
 router.get("/user", isLogin, async function (req, res) {
+  console.log("[/auth/user] Request user:", req.user);
   const userId = req.user?.id;
 
   try {
     // 사용자 정보 조회 (민감한 정보 제외)
-    const sql = `
+    // First, check if name column exists
+    const columnCheckSql = `
+      SELECT COLUMN_NAME 
+      FROM INFORMATION_SCHEMA.COLUMNS 
+      WHERE TABLE_NAME = 'user' 
+      AND COLUMN_NAME = 'name'
+      AND TABLE_SCHEMA = DATABASE()
+    `;
+    
+    const columnExists = await queryAsync(columnCheckSql, []);
+    const hasNameColumn = columnExists.length > 0;
+    
+    // Build SQL query based on column existence
+    const sql = hasNameColumn ? `
       SELECT 
         id,
         authType,
         email,
-        CASE 
-          WHEN email IS NOT NULL THEN 
-            SUBSTRING_INDEX(email, '@', 1) 
-          ELSE 
-            CONCAT('user_', id)
-        END as name,
+        name,
+        grade,
+        membershipStartDate,
+        membershipEndDate,
+        membershipStatus,
+        createdAt,
+        lastLoginAt
+      FROM user 
+      WHERE id = ?
+    ` : `
+      SELECT 
+        id,
+        authType,
+        email,
         grade,
         membershipStartDate,
         membershipEndDate,
@@ -245,15 +298,49 @@ router.get("/user", isLogin, async function (req, res) {
       return res.status(404).json({ message: "사용자를 찾을 수 없습니다." });
     }
 
-    // 이메일 복호화 처리
+    // 이메일 복호화 처리 및 name 생성
     const userData = result[0];
-    if (userData.email) {
-      try {
-        userData.email = await transDecrypt(userData.email);
-      } catch (decryptError) {
-        console.error("Email decryption error:", decryptError);
-        // 복호화 실패시 이메일을 숨김 처리
-        userData.email = userData.email.substring(0, 3) + "***@***.***";
+    
+    console.log("[/auth/user] Raw user data from DB:", {
+      id: userData.id,
+      name: userData.name,
+      hasNameColumn: hasNameColumn,
+      authType: userData.authType
+    });
+    
+    // If name column exists and has a value, use it
+    if (hasNameColumn && userData.name) {
+      // Name exists in database, just decrypt email if present
+      if (userData.email) {
+        try {
+          userData.email = await transDecrypt(userData.email);
+        } catch (decryptError) {
+          console.error("Email decryption error:", decryptError);
+          userData.email = userData.email.substring(0, 3) + "***@***.***";
+        }
+      }
+    } else {
+      // Generate name based on email or authType
+      if (userData.email) {
+        try {
+          userData.email = await transDecrypt(userData.email);
+          // Extract username from email
+          userData.name = userData.email.split('@')[0];
+        } catch (decryptError) {
+          console.error("Email decryption error:", decryptError);
+          // 복호화 실패시 이메일을 숨김 처리
+          userData.email = userData.email.substring(0, 3) + "***@***.***";
+          userData.name = `user_${userData.id}`;
+        }
+      } else {
+        // 소셜 로그인 사용자
+        if (userData.authType === '카카오') {
+          userData.name = '카카오 사용자';
+        } else if (userData.authType === '구글') {
+          userData.name = '구글 사용자';
+        } else {
+          userData.name = `${userData.authType || '이메일'} 사용자`;
+        }
       }
     }
 
@@ -456,6 +543,84 @@ router.put("/changePassword", isLogin, async function (req, res) {
   } catch (e) {
     console.log(e);
     res.status(500).json({ message: "비밀번호 변경 실패" });
+  }
+});
+
+// 프로필 정보 가져오기
+router.get("/profile", isLogin, async function (req, res) {
+  const userId = req.user?.id;
+
+  if (!userId) {
+    return res.status(401).json({ message: "로그인이 필요합니다" });
+  }
+
+  try {
+    // Check if name column exists
+    const columnCheckSql = `
+      SELECT COLUMN_NAME 
+      FROM INFORMATION_SCHEMA.COLUMNS 
+      WHERE TABLE_NAME = 'user' 
+      AND COLUMN_NAME = 'name'
+      AND TABLE_SCHEMA = DATABASE()
+    `;
+    
+    const columnExists = await queryAsync(columnCheckSql, []);
+    const hasNameColumn = columnExists.length > 0;
+    
+    const sql = hasNameColumn ? 
+      `SELECT id, authType, grade, name, email, createdAt, lastLoginAt, 
+              membershipStatus, membershipStartDate, membershipEndDate 
+       FROM user WHERE id = ?` :
+      `SELECT id, authType, grade, email, createdAt, lastLoginAt, 
+              membershipStatus, membershipStartDate, membershipEndDate 
+       FROM user WHERE id = ?`;
+       
+    const result = await queryAsync(sql, [userId]);
+    
+    if (result.length === 0) {
+      return res.status(404).json({ message: "사용자를 찾을 수 없습니다" });
+    }
+    
+    const userData = result[0];
+    
+    // If name column doesn't exist or is empty, generate it
+    if (!hasNameColumn || !userData.name) {
+      if (userData.email) {
+        try {
+          const decryptedEmail = await transDecrypt(userData.email);
+          userData.name = decryptedEmail.split('@')[0];
+          userData.email = decryptedEmail;
+        } catch (decryptError) {
+          console.error("Email decryption error:", decryptError);
+          userData.name = `user_${userData.id}`;
+          userData.email = userData.email.substring(0, 3) + "***@***.***";
+        }
+      } else {
+        // Social login users
+        if (userData.authType === '카카오') {
+          userData.name = '카카오 사용자';
+        } else if (userData.authType === '구글') {
+          userData.name = '구글 사용자';
+        } else {
+          userData.name = `${userData.authType || '이메일'} 사용자`;
+        }
+      }
+    } else {
+      // Decrypt email if exists
+      if (userData.email) {
+        try {
+          userData.email = await transDecrypt(userData.email);
+        } catch (decryptError) {
+          console.error("Email decryption error:", decryptError);
+          userData.email = userData.email.substring(0, 3) + "***@***.***";
+        }
+      }
+    }
+    
+    res.status(200).json(userData);
+  } catch (e) {
+    console.log(e);
+    res.status(500).json({ message: "프로필 정보 조회 실패" });
   }
 });
 

@@ -27,16 +27,17 @@ app.use((req, res, next) => {
   const isSafari = req.headers['user-agent']?.includes('Safari') && !req.headers['user-agent']?.includes('Chrome');
   const isIncognito = !req.headers.cookie || req.headers.cookie === '';
   
-  if (req.path.includes('/auth/loginCheck') || req.path.includes('/content/project')) {
-    console.log(`[Cookie Debug] ${req.method} ${req.path}:`, {
-      origin: req.headers.origin,
-      cookie: req.headers.cookie ? 'Present' : 'Missing',
-      sessionID: req.sessionID,
-      sessionToken: req.headers['x-session-token'] ? 'Present' : 'Missing',
-      userAgent: isSafari ? 'Safari' : 'Other',
-      possibleIncognito: isSafari && isIncognito,
-    });
-  }
+  // Commented out cookie debug logs
+  // if (req.path.includes('/auth/loginCheck') || req.path.includes('/content/project')) {
+  //   console.log(`[Cookie Debug] ${req.method} ${req.path}:`, {
+  //     origin: req.headers.origin,
+  //     cookie: req.headers.cookie ? 'Present' : 'Missing',
+  //     sessionID: req.sessionID,
+  //     sessionToken: req.headers['x-session-token'] ? 'Present' : 'Missing',
+  //     userAgent: isSafari ? 'Safari' : 'Other',
+  //     possibleIncognito: isSafari && isIncognito,
+  //   });
+  // }
   
   // For Safari, we need to ensure the session is saved
   if (isSafari && req.session) {
@@ -83,11 +84,13 @@ import authRouter from "./router/auth";
 import contentRouter from "./router/content";
 import adminRouter from "./router/admin";
 import paymentRouter from "./router/payment";
+import brandRouter from "./router/brand";
 
 app.use("/auth", authRouter);
 app.use("/admin", adminRouter);
 app.use("/content", contentRouter);
 app.use("/payment", paymentRouter);
+app.use("/brand", brandRouter);
 
 app.get("/", (req, res) => {
   res.status(200).send("OK");

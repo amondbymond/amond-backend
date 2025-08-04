@@ -15,7 +15,7 @@ const awsSecretKey = process.env.AWS_SECRET_ACCESS;
 
 console.log('AWS Environment Check:', {
   AWS_ACCESS_KEY: awsAccessKey ? `Set (${awsAccessKey.substring(0, 10)}...)` : 'Not set',
-  AWS_SECRET_ACCESS: awsSecretKey ? 'Set' : 'Not set',
+  AWS_SECRET_ACCESS: awsSecretKey ? `Set (${awsSecretKey.substring(0, 10)}...)` : 'Not set',
 });
 
 // Validate AWS credentials before creating S3 client
@@ -32,7 +32,7 @@ if (!awsAccessKey || !awsSecretKey) {
 // Create S3 client with dummy credentials if not configured (to prevent initialization errors)
 const s3 = new S3Client({
   region: "ap-northeast-2", // 사용자 사용 지역 (서울의 경우 ap-northeast-2)
-  credentials: credentialsConfigured ? {
+  credentials: credentialsConfigured && awsAccessKey && awsSecretKey ? {
     accessKeyId: awsAccessKey,
     secretAccessKey: awsSecretKey,
   } : {
@@ -41,8 +41,8 @@ const s3 = new S3Client({
     secretAccessKey: "DUMMY_SECRET_KEY",
   },
   // Disable automatic checksum calculation
-  requestChecksumCalculation: "WHEN_REQUIRED",
-  responseChecksumValidation: "WHEN_REQUIRED",
+  requestChecksumCalculation: "WHEN_REQUIRED" as const,
+  responseChecksumValidation: "WHEN_REQUIRED" as const,
 });
 
 // 업로드 (presigned url)
@@ -82,7 +82,7 @@ const uploadPresigned = async ({
     });
     
     // Validate the generated URL
-    if (!url.includes(awsAccessKey)) {
+    if (awsAccessKey && !url.includes(awsAccessKey)) {
       console.error("Generated presigned URL appears to be malformed - missing access key");
       throw new Error("Invalid presigned URL generated");
     }

@@ -33,6 +33,7 @@
     "http": "^0.0.1-security",
     "moment-timezone": "^0.5.48",
     "mysql": "^2.18.1",
+    "mysql2": "^3.14.3",
     "node-cron": "^4.2.1",
     "nodemailer": "^7.0.3",
     "openai": "^4.103.0",

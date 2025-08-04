@@ -226,6 +226,69 @@ const handleInstagram = async (url: string): Promise<string[]> => {
 };
 
 /**
+ * Fallback handler using basic HTTP request for problematic sites
+ */
+const handleFallbackScraping = async (url: string): Promise<string[]> => {
+    console.log(`FALLBACK HANDLER: Using basic HTTP scraping for ${url}`);
+    
+    try {
+        const response = await axios.get(url, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.5',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1'
+            },
+            timeout: 30000,
+            maxRedirects: 5
+        });
+        
+        const html = response.data;
+        const images: string[] = [];
+        
+        // Extract Open Graph image
+        const ogImageMatch = html.match(/<meta\s+property=["']og:image["']\s+content=["']([^"']+)["']/i);
+        if (ogImageMatch && ogImageMatch[1]) {
+            images.push(resolveUrl(ogImageMatch[1], url));
+        }
+        
+        // Extract regular img tags
+        const imgRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi;
+        let match;
+        while ((match = imgRegex.exec(html)) !== null) {
+            const imgUrl = match[1];
+            if (imgUrl && !imgUrl.includes('data:') && !imgUrl.includes('svg')) {
+                const resolvedUrl = resolveUrl(imgUrl, url);
+                if (resolvedUrl && images.length < 10) {
+                    images.push(resolvedUrl);
+                }
+            }
+        }
+        
+        // Extract srcset images
+        const srcsetRegex = /srcset=["']([^"']+)["']/gi;
+        while ((match = srcsetRegex.exec(html)) !== null) {
+            const srcset = match[1];
+            const firstUrl = srcset.split(',')[0].trim().split(' ')[0];
+            if (firstUrl && !firstUrl.includes('data:')) {
+                const resolvedUrl = resolveUrl(firstUrl, url);
+                if (resolvedUrl && images.length < 10) {
+                    images.push(resolvedUrl);
+                }
+            }
+        }
+        
+        return [...new Set(images)]; // Remove duplicates
+        
+    } catch (error) {
+        console.error('Fallback scraping failed:', error);
+        throw error;
+    }
+};
+
+/**
  * Handles general websites using Puppeteer
  */
 const handleGeneralWebsite = async (url: string): Promise<string[]> => {
@@ -245,15 +308,46 @@ const handleGeneralWebsite = async (url: string): Promise<string[]> => {
             '--disable-javascript',
             '--no-first-run',
             '--no-default-browser-check',
-            '--disable-default-apps'
+            '--disable-default-apps',
+            '--disable-http2'  // Disable HTTP/2 to avoid protocol errors
         ],
         executablePath: process.env.CHROME_BIN || undefined
     });
     const page = await browser.newPage();
     
+    // Set a more compatible user agent
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+    
     try {
-        await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
-        await new Promise(resolve => setTimeout(resolve, 10000));
+        // Try to navigate with retry logic for HTTP/2 errors
+        let navigationSuccess = false;
+        let lastError: Error | null = null;
+        
+        for (let attempt = 0; attempt < 3; attempt++) {
+            try {
+                await page.goto(url, { 
+                    waitUntil: 'domcontentloaded', // Use lighter wait condition
+                    timeout: 30000
+                });
+                navigationSuccess = true;
+                break;
+            } catch (error: any) {
+                lastError = error;
+                console.log(`Navigation attempt ${attempt + 1} failed:`, error.message);
+                
+                // If it's an HTTP/2 error, wait a bit before retrying
+                if (error.message.includes('ERR_HTTP2_PROTOCOL_ERROR')) {
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                }
+            }
+        }
+        
+        if (!navigationSuccess && lastError) {
+            throw lastError;
+        }
+        
+        // Wait for content to load
+        await new Promise(resolve => setTimeout(resolve, 5000));
 
         const imageUrls = new Set<string>();
         const logoAndBrandingImages = new Set<string>();
@@ -501,7 +595,17 @@ export const scrapeImagesController = async (req: Request, res: Response) => {
         } else if (lowercasedUrl.includes('instagram.com')) {
             imageUrls = await handleInstagram(url);
         } else {
-            imageUrls = await handleGeneralWebsite(url);
+            try {
+                imageUrls = await handleGeneralWebsite(url);
+            } catch (error: any) {
+                // If Puppeteer fails with HTTP/2 error, try fallback method
+                if (error.message && error.message.includes('ERR_HTTP2_PROTOCOL_ERROR')) {
+                    console.log('🔄 [SCRAPE-IMAGES] HTTP/2 error detected, trying fallback method...');
+                    imageUrls = await handleFallbackScraping(url);
+                } else {
+                    throw error; // Re-throw other errors
+                }
+            }
         }
 
         
