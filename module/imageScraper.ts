@@ -646,13 +646,8 @@ export const scrapeImagesController = async (req: Request, res: Response) => {
         
         if (responseSize > 10 * 1024 * 1024) { // 10MB limit
             console.warn(`⚠️ [SCRAPE-IMAGES] WARNING: Response size exceeds 10MB (${finalImages.length} images)`);
-            // Limit the number of images if response is too large
-            const limitedImages = finalImages.slice(0, 5);
-            console.log(`🔄 [SCRAPE-IMAGES] Limiting to 5 images to reduce response size`);
-            return res.status(200).json({ 
-                images: limitedImages,
-                warning: 'Response size limit reached. Only returning first 5 images.'
-            });
+            // Don't limit images, just warn about size
+            console.log(`🔄 [SCRAPE-IMAGES] Sending all ${finalImages.length} images despite large size`);
         }
         
         console.log('✅ [SCRAPE-IMAGES] Sending successful response');
