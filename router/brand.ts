@@ -251,7 +251,7 @@ router.delete("/:brandId", isLogin, async function (req, res) {
       // Delete content first (references contentrequest)
       try {
         const contentRequests = await queryAsync(
-          "SELECT id FROM contentrequest WHERE fk_projectId = ?",
+          "SELECT id FROM contentRequest WHERE fk_projectId = ?",
           [project.id]
         );
         
@@ -266,7 +266,7 @@ router.delete("/:brandId", isLogin, async function (req, res) {
       
       // Delete contentrequest (if table exists)
       try {
-        await queryAsync("DELETE FROM contentrequest WHERE fk_projectId = ?", [project.id]);
+        await queryAsync("DELETE FROM contentRequest WHERE fk_projectId = ?", [project.id]);
       } catch (e: any) {
         if (e.code !== 'ER_NO_SUCH_TABLE') {
           throw e;

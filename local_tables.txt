@@ -1,0 +1,14 @@
+aiPrompt
+billing_keys
+brand
+cleanup_log
+content
+contentRequest
+emailNotification
+membership_tiers
+payment_logs
+payment_subscriptions
+project
+regenerateLog
+Tables_in_amond
+user

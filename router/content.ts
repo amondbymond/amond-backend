@@ -185,7 +185,7 @@ router.get("/project/sessions", isLogin, async function (req, res) {
                    cr.id as contentRequestId,
                    cr.createdAt as contentRequestCreatedAt,
                    p.id, p.name, p.sessionName, p.category, p.url, p.createdAt, p.lastAccessedAt, p.isActive 
-                 FROM contentrequest cr
+                 FROM contentRequest cr
                  JOIN project p ON cr.fk_projectId = p.id
                  WHERE p.fk_userId = ? 
                  AND p.name != 'ff'
@@ -1445,7 +1445,7 @@ router.delete("/project/:projectId", isLogin, async function (req, res) {
     try {
       // First find all contentrequest IDs for this project
       const contentRequests = await queryAsync(
-        `SELECT id FROM contentrequest WHERE fk_projectId = ?`,
+        `SELECT id FROM contentRequest WHERE fk_projectId = ?`,
         [projectId]
       );
       
@@ -1462,7 +1462,7 @@ router.delete("/project/:projectId", isLogin, async function (req, res) {
     
     // 4. Delete from contentrequest table (if it exists)
     try {
-      await queryAsync(`DELETE FROM contentrequest WHERE fk_projectId = ?`, [projectId]);
+      await queryAsync(`DELETE FROM contentRequest WHERE fk_projectId = ?`, [projectId]);
       console.log('[DELETE PROJECT] Deleted from contentrequest table');
     } catch (e: any) {
       if (e.code !== 'ER_NO_SUCH_TABLE') {
