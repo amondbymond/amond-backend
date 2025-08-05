@@ -27,16 +27,18 @@ export default () => {
           if (result.length === 0) {
             const { id } = profile;
             const email = profile.emails[0]?.value || null;
+            const name = profile.displayName || profile.name?.givenName || email?.split('@')[0] || '구글 사용자';
 
             const emailDuplicate = email ? await crpytoSameResult(email) : null;
             const encryptedEmail = email ? await transEncrypt(email) : null;
 
-            const sql = `INSERT INTO user(authType, email, socialId, emailDuplicate, grade, lastLoginAt, createdAt)
-              VALUES("구글", ?, ?, ?, "basic", NOW(), NOW());`;
+            const sql = `INSERT INTO user(authType, email, socialId, emailDuplicate, name, grade, lastLoginAt, createdAt)
+              VALUES("구글", ?, ?, ?, ?, "basic", NOW(), NOW());`;
             const result = await queryAsync(sql, [
               encryptedEmail,
               id,
               emailDuplicate,
+              name,
             ]);
 
             return done(null, {

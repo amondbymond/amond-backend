@@ -27,15 +27,18 @@ export default () => {
           if (result.length === 0) {
             const { id } = profile;
             const email = profile._json.kakao_account?.email || null;
+            const nickname = profile._json.properties?.nickname || profile.displayName;
+            const name = nickname || email?.split('@')[0] || '카카오 사용자';
             const emailDuplicate = email ? await crpytoSameResult(email) : null;
             const encryptedEmail = email ? await transEncrypt(email) : null;
 
-            const sql = `INSERT INTO user(authType, email, socialId, emailDuplicate, grade, lastLoginAt, createdAt)
-              VALUES("카카오", ?, ?, ?, "basic", NOW(), NOW());`;
+            const sql = `INSERT INTO user(authType, email, socialId, emailDuplicate, name, grade, lastLoginAt, createdAt)
+              VALUES("카카오", ?, ?, ?, ?, "basic", NOW(), NOW());`;
             const result = await queryAsync(sql, [
               encryptedEmail,
               id,
               emailDuplicate,
+              name,
             ]);
 
             return done(null, {

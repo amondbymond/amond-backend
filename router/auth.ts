@@ -45,11 +45,14 @@ router.post("/register/email", async function (req, res) {
   // console.log(encryptedEmail);
   // 정상 가입
   bcrypt.hash(password, saltRounds, async (error, hash) => {
-    const sql = `INSERT INTO user(authType, email, password, emailDuplicate, grade, createdAt)
-      VALUES("이메일", ?, ?, ?, "basic", NOW());`;
+    // Extract name from email (part before @)
+    const userName = email.split('@')[0];
+    
+    const sql = `INSERT INTO user(authType, email, password, emailDuplicate, name, grade, createdAt)
+      VALUES("이메일", ?, ?, ?, ?, "basic", NOW());`;
 
     try {
-      await queryAsync(sql, [encryptedEmail, hash, emailDuplicate]);
+      await queryAsync(sql, [encryptedEmail, hash, emailDuplicate, userName]);
       res.status(200).json("회원가입이 정상적으로 완료되었습니다!");
     } catch (e) {
       console.error(e);
