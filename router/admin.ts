@@ -16,8 +16,24 @@ router.get("/user/getList/:page", isAdmin, async function (req, res) {
     searchSQL = `WHERE ${searchField} LIKE '%${searchInput}%'`;
   }
 
-  // 유저 정보 + 최근 프로젝트 정보 조회 (향후 고도화 등 고려)
-  const sql = `SELECT a.id, a.authType, a.email, a.lastLoginAt, a.createdAt, b.name, b.category, b.url, b.reasonList FROM user a
+  // 유저 정보 + 최근 프로젝트 정보 + 구독 정보 조회
+  const sql = `SELECT 
+    a.id, 
+    a.authType, 
+    a.email, 
+    a.grade, 
+    a.lastLoginAt, 
+    a.createdAt,
+    b.name, 
+    b.category, 
+    b.url, 
+    b.reasonList,
+    ps.planType as subscriptionPlan,
+    ps.status as subscriptionStatus,
+    ps.startDate as subscriptionStartDate,
+    ps.nextBillingDate,
+    ps.price as subscriptionPrice
+  FROM user a
     LEFT JOIN (
       SELECT p.*
       FROM project p
@@ -27,6 +43,15 @@ router.get("/user/getList/:page", isAdmin, async function (req, res) {
         GROUP BY fk_userId
       ) latest ON p.id = latest.max_id
     ) b ON a.id = b.fk_userId
+    LEFT JOIN (
+      SELECT ps1.*
+      FROM payment_subscriptions ps1
+      INNER JOIN (
+        SELECT fk_userId, MAX(id) as max_id
+        FROM payment_subscriptions
+        GROUP BY fk_userId
+      ) ps2 ON ps1.id = ps2.max_id
+    ) ps ON a.id = ps.fk_userId
     ${searchSQL}
     ORDER BY ${orderField} ${order}
     LIMIT ${itemNumber.adminUser} OFFSET ${
@@ -72,6 +97,91 @@ router.get("/user/getTotalNum", isAdmin, async function (req, res) {
   } catch (e) {
     console.error(e);
     res.status(500).json({ message: `계정 개수 로드 실패\n${e}` });
+  }
+});
+
+// 유료 회원 목록 (구매한 사용자)
+router.get("/user/getPaidUsers/:page", isAdmin, async function (req, res) {
+  const { page } = req.params;
+  const { orderField = 'ps.startDate', order = 'DESC' } = req.query;
+
+  // 활성 구독이 있는 사용자
+  const sql = `SELECT 
+    a.id, 
+    a.authType, 
+    a.email, 
+    a.grade, 
+    a.lastLoginAt, 
+    a.createdAt,
+    b.name, 
+    b.category, 
+    b.url, 
+    b.reasonList,
+    ps.planType as subscriptionPlan,
+    ps.status as subscriptionStatus,
+    ps.startDate as subscriptionStartDate,
+    ps.nextBillingDate,
+    ps.price as subscriptionPrice
+  FROM user a
+    INNER JOIN (
+      SELECT ps1.*
+      FROM payment_subscriptions ps1
+      INNER JOIN (
+        SELECT fk_userId, MAX(id) as max_id
+        FROM payment_subscriptions
+        WHERE status = 'active'
+        GROUP BY fk_userId
+      ) ps2 ON ps1.id = ps2.max_id
+    ) ps ON a.id = ps.fk_userId
+    LEFT JOIN (
+      SELECT p.*
+      FROM project p
+      INNER JOIN (
+        SELECT fk_userId, MAX(id) as max_id
+        FROM project
+        GROUP BY fk_userId
+      ) latest ON p.id = latest.max_id
+    ) b ON a.id = b.fk_userId
+    WHERE ps.status = 'active' AND ps.planType != 'basic'
+    ORDER BY ${orderField} ${order}
+    LIMIT ${itemNumber.adminUser} OFFSET ${
+    itemNumber.adminUser * (parseInt(page, 10) - 1)
+  }`;
+
+  try {
+    const result = await queryAsync(sql, []);
+    if (result.length === 0) {
+      res.status(200).json([]);
+      return;
+    }
+
+    for (let i = 0; i < result.length; i++) {
+      result[i].email =
+        result[i].authType === "이메일"
+          ? await transDecrypt(result[i].email)
+          : null;
+    }
+
+    res.status(200).send(result);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ message: `유료 회원 목록 로드 실패\n${e}` });
+  }
+});
+
+// 유료 회원 수
+router.get("/user/getPaidUsers/getTotalNum", isAdmin, async function (req, res) {
+  const sql = `SELECT COUNT(DISTINCT a.id) as totalNum 
+    FROM user a
+    INNER JOIN payment_subscriptions ps ON a.id = ps.fk_userId
+    WHERE ps.status = 'active' AND ps.planType != 'basic'`;
+
+  try {
+    const result = await queryAsync(sql, []);
+    res.status(200).json(result[0]);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ message: `유료 회원 개수 로드 실패\n${e}` });
   }
 });
 

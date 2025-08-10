@@ -85,12 +85,14 @@ import contentRouter from "./router/content";
 import adminRouter from "./router/admin";
 import paymentRouter from "./router/payment";
 import brandRouter from "./router/brand";
+import singleImageRouter from "./router/singleImage";
 
 app.use("/auth", authRouter);
 app.use("/admin", adminRouter);
 app.use("/content", contentRouter);
 app.use("/payment", paymentRouter);
 app.use("/brand", brandRouter);
+app.use("/api/ai", singleImageRouter);
 
 app.get("/", (req, res) => {
   res.status(200).send("OK");

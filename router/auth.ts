@@ -130,30 +130,148 @@ router.post("/login/email", (req: any, res, next) => {
 });
 
 // 카카오 로그인
-router.get("/login/kakao", passport.authenticate("kakao"));
+router.get("/login/kakao", (req, res, next) => {
+  // Pass returnTo parameter through the OAuth flow
+  const returnTo = req.query.returnTo as string;
+  const state = returnTo ? Buffer.from(JSON.stringify({ returnTo })).toString('base64') : undefined;
+  
+  passport.authenticate("kakao", { state })(req, res, next);
+});
 
 // 카카오 콜백
 router.get(
   "/kakao/callback",
-  passport.authenticate("kakao", {
-    failureRedirect: failUrl,
-    successRedirect: successUrl,
-  })
+  (req, res, next) => {
+    passport.authenticate("kakao", async (err: Error, user: { id: number }) => {
+      if (err) {
+        console.error(err);
+        return res.redirect(failUrl);
+      }
+
+      if (!user) {
+        return res.redirect(failUrl);
+      }
+
+      req.login(user, async (loginErr: Error) => {
+        if (loginErr) {
+          console.error(loginErr);
+          return res.redirect(failUrl);
+        }
+
+        // Generate a session token for incognito mode
+        const sessionToken = req.sessionID;
+        
+        // Store the session token with user mapping
+        try {
+          const tokenSql = `UPDATE user SET sessionToken = ?, tokenUpdatedAt = NOW() WHERE id = ?`;
+          await queryAsync(tokenSql, [sessionToken, user.id]);
+          
+          // Force session save for incognito mode
+          req.session.save((saveErr: any) => {
+            if (saveErr) {
+              console.error("[Kakao Login] Session save error:", saveErr);
+            }
+          });
+
+          // Redirect with session token as query parameter for incognito mode
+          const redirectUrl = new URL(successUrl);
+          redirectUrl.searchParams.set('sessionToken', sessionToken);
+          
+          // Pass through returnTo parameter if it exists in state
+          const state = req.query.state as string;
+          if (state) {
+            try {
+              const stateData = JSON.parse(Buffer.from(state, 'base64').toString());
+              if (stateData.returnTo) {
+                redirectUrl.searchParams.set('returnTo', stateData.returnTo);
+              }
+            } catch (e) {
+              console.error("Failed to parse state parameter:", e);
+            }
+          }
+          
+          return res.redirect(redirectUrl.toString());
+        } catch (e) {
+          console.error("Failed to save session token:", e);
+          return res.redirect(successUrl);
+        }
+      });
+    })(req, res, next);
+  }
 );
 
 // 구글 로그인
-router.get(
-  "/login/google",
-  passport.authenticate("google", { scope: ["profile", "email"] })
-);
+router.get("/login/google", (req, res, next) => {
+  // Pass returnTo parameter through the OAuth flow
+  const returnTo = req.query.returnTo as string;
+  const state = returnTo ? Buffer.from(JSON.stringify({ returnTo })).toString('base64') : undefined;
+  
+  passport.authenticate("google", { 
+    scope: ["profile", "email"],
+    state 
+  })(req, res, next);
+});
 
 // 구글 콜백
 router.get(
   "/google/callback",
-  passport.authenticate("google", {
-    failureRedirect: failUrl,
-    successRedirect: successUrl,
-  })
+  (req, res, next) => {
+    passport.authenticate("google", async (err: Error, user: { id: number }) => {
+      if (err) {
+        console.error(err);
+        return res.redirect(failUrl);
+      }
+
+      if (!user) {
+        return res.redirect(failUrl);
+      }
+
+      req.login(user, async (loginErr: Error) => {
+        if (loginErr) {
+          console.error(loginErr);
+          return res.redirect(failUrl);
+        }
+
+        // Generate a session token for incognito mode
+        const sessionToken = req.sessionID;
+        
+        // Store the session token with user mapping
+        try {
+          const tokenSql = `UPDATE user SET sessionToken = ?, tokenUpdatedAt = NOW() WHERE id = ?`;
+          await queryAsync(tokenSql, [sessionToken, user.id]);
+          
+          // Force session save for incognito mode
+          req.session.save((saveErr: any) => {
+            if (saveErr) {
+              console.error("[Google Login] Session save error:", saveErr);
+            }
+          });
+
+          // Redirect with session token as query parameter for incognito mode
+          const redirectUrl = new URL(successUrl);
+          redirectUrl.searchParams.set('sessionToken', sessionToken);
+          
+          // Pass through returnTo parameter if it exists in state
+          const state = req.query.state as string;
+          if (state) {
+            try {
+              const stateData = JSON.parse(Buffer.from(state, 'base64').toString());
+              if (stateData.returnTo) {
+                redirectUrl.searchParams.set('returnTo', stateData.returnTo);
+              }
+            } catch (e) {
+              console.error("Failed to parse state parameter:", e);
+            }
+          }
+          
+          return res.redirect(redirectUrl.toString());
+        } catch (e) {
+          console.error("Failed to save session token:", e);
+          return res.redirect(successUrl);
+        }
+      });
+    })(req, res, next);
+  }
 );
 
 // 로그인 상태인지 체크

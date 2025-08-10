@@ -16,6 +16,7 @@ import {
 import { scrapeImagesController } from "../module/imageScraper";
 import { generateBrandChatter } from "../module/brandAnalysis";
 import { checkAndSendNotifications } from "../module/emailNotificationSES";
+import { canUserPerformAction, trackUsage, getUserUsageLimits } from "../module/usageTracking";
 import moment from "moment-timezone";
 
 // ㅇ 프로젝트 (브랜드 정보)
@@ -59,6 +60,16 @@ router.post("/project", async function (req, res) {
   } = req.body;
 
   try {
+    // Check if user can create a project
+    if (userId) {
+      const canCreate = await canUserPerformAction(userId, 'create_project');
+      if (!canCreate.allowed) {
+        return res.status(403).json({
+          message: canCreate.reason || '프로젝트 생성 한도에 도달했습니다.',
+          remaining: canCreate.remaining || 0
+        });
+      }
+    }
     const presignedUrlList = [];
     const entireDirectoryList = [];
     for (const imageName of imageNameList) {
@@ -125,6 +136,11 @@ router.post("/project", async function (req, res) {
 
     const projectId = result.insertId;
     const hashId = createHashId(projectId);
+
+    // Track the project creation
+    if (userId) {
+      await trackUsage(userId, 'project_creation', projectId, undefined, brandId);
+    }
 
     res.status(200).json({
       projectId: hashId,
@@ -919,10 +935,40 @@ router.get("/image", isLogin, async function (req, res) {
 // 생성된 콘텐츠 캡션 직접 수정
 router.put("/caption", isLogin, async function (req, res) {
   const { contentId, caption } = req.body;
+  const userId = req.user?.id;
 
   try {
+    // Check if user can edit content
+    if (userId) {
+      const canEdit = await canUserPerformAction(userId, 'edit_content');
+      if (!canEdit.allowed) {
+        return res.status(403).json({
+          message: canEdit.reason || '오늘의 수정 한도에 도달했습니다.',
+          remainingToday: canEdit.remaining || 0
+        });
+      }
+    }
+
     const updateSql = `UPDATE content SET caption = ? WHERE id = ?`;
     await queryAsync(updateSql, [caption, contentId]);
+
+    // Track the content edit
+    if (userId) {
+      // Get the project ID for this content
+      const contentResult = await queryAsync(
+        `SELECT cr.fk_projectId, p.fk_brandId 
+         FROM content c 
+         JOIN contentRequest cr ON c.fk_contentRequestId = cr.id 
+         JOIN project p ON cr.fk_projectId = p.id
+         WHERE c.id = ?`,
+        [contentId]
+      );
+      
+      if (contentResult && contentResult.length > 0) {
+        const { fk_projectId, fk_brandId } = contentResult[0];
+        await trackUsage(userId, 'content_edit', fk_projectId, contentId, fk_brandId);
+      }
+    }
 
     res.status(200).json({ message: "캡션 수정 성공" });
   } catch (e) {
@@ -937,6 +983,17 @@ router.put("/regenerate", isLogin, async function (req, res) {
   const userId = req.user?.id;
 
   try {
+    // Check if user can edit content
+    if (userId) {
+      const canEdit = await canUserPerformAction(userId, 'edit_content');
+      if (!canEdit.allowed) {
+        return res.status(403).json({
+          message: canEdit.reason || '오늘의 수정 한도에 도달했습니다.',
+          remainingToday: canEdit.remaining || 0
+        });
+      }
+    }
+
     const limitCheck = await checkLimitUpdate({
       userId: userId || 0,
       requestType,
@@ -954,6 +1011,24 @@ router.put("/regenerate", isLogin, async function (req, res) {
       const { imageUrl } = contentResult[0];
       await deleteS3(imageUrl);
       const newImageUrl = await createImage(contentId);
+      
+      // Track the content edit
+      if (userId) {
+        const projectInfo = await queryAsync(
+          `SELECT cr.fk_projectId, p.fk_brandId 
+           FROM content c 
+           JOIN contentRequest cr ON c.fk_contentRequestId = cr.id 
+           JOIN project p ON cr.fk_projectId = p.id
+           WHERE c.id = ?`,
+          [contentId]
+        );
+        
+        if (projectInfo && projectInfo.length > 0) {
+          const { fk_projectId, fk_brandId } = projectInfo[0];
+          await trackUsage(userId, 'content_edit', fk_projectId, contentId, fk_brandId);
+        }
+      }
+      
       return res.status(200).json({ imageUrl: newImageUrl || null });
     } else {
       const { subject, fk_contentRequestId } = contentResult[0];
@@ -983,6 +1058,24 @@ router.put("/regenerate", isLogin, async function (req, res) {
         const caption = textResult.message?.caption?.slice(0, 500);
         const contentSql = `UPDATE content SET caption = ?, textToken = ? WHERE id = ?`;
         await queryAsync(contentSql, [caption, textToken, contentId]);
+        
+        // Track the content edit
+        if (userId) {
+          const projectInfo = await queryAsync(
+            `SELECT cr.fk_projectId, p.fk_brandId 
+             FROM content c 
+             JOIN contentRequest cr ON c.fk_contentRequestId = cr.id 
+             JOIN project p ON cr.fk_projectId = p.id
+             WHERE c.id = ?`,
+            [contentId]
+          );
+          
+          if (projectInfo && projectInfo.length > 0) {
+            const { fk_projectId, fk_brandId } = projectInfo[0];
+            await trackUsage(userId, 'content_edit', fk_projectId, contentId, fk_brandId);
+          }
+        }
+        
         return res.status(200).json({ caption });
       } else if (requestType === "all") {
         // 피드백을 통한 전체 재생성인 경우
@@ -1020,6 +1113,24 @@ router.put("/regenerate", isLogin, async function (req, res) {
         const { imageUrl } = contentResult[0];
         await deleteS3(imageUrl);
         const newImageUrl = await createImage(contentId);
+        
+        // Track the content edit
+        if (userId) {
+          const projectInfo = await queryAsync(
+            `SELECT cr.fk_projectId, p.fk_brandId 
+             FROM content c 
+             JOIN contentRequest cr ON c.fk_contentRequestId = cr.id 
+             JOIN project p ON cr.fk_projectId = p.id
+             WHERE c.id = ?`,
+            [contentId]
+          );
+          
+          if (projectInfo && projectInfo.length > 0) {
+            const { fk_projectId, fk_brandId } = projectInfo[0];
+            await trackUsage(userId, 'content_edit', fk_projectId, contentId, fk_brandId);
+          }
+        }
+        
         return res.status(200).json({ imageUrl: newImageUrl || null, caption });
       }
     }
@@ -1480,6 +1591,164 @@ router.delete("/project/:projectId", isLogin, async function (req, res) {
   } catch (error) {
     console.error('[DELETE PROJECT] Error:', error);
     res.status(500).json({ error: '프로젝트 삭제 중 오류가 발생했습니다.' });
+  }
+});
+
+// Single image generation endpoint
+router.post("/single-image", isLogin, async function (req, res) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: '인증이 필요합니다.' });
+    }
+    
+    const userId = req.user.id;
+    const { concept, brandId } = req.body;
+    
+    if (!concept || !brandId) {
+      return res.status(400).json({ error: '필수 데이터가 누락되었습니다.' });
+    }
+
+    // Get project data
+    const projectSql = `SELECT * FROM project WHERE id = ? AND fk_userId = ?`;
+    const projectResult = await queryAsync(projectSql, [brandId, userId]);
+    
+    if (!projectResult || projectResult.length === 0) {
+      return res.status(404).json({ error: '프로젝트를 찾을 수 없습니다.' });
+    }
+    
+    const project = projectResult[0];
+    
+    // Create content request record
+    const contentRequestSql = `
+      INSERT INTO contentRequest (
+        fk_projectId,
+        contentNum,
+        dateOrder,
+        status,
+        created_at
+      ) VALUES (?, 1, NOW(), 'pending', NOW())
+    `;
+    
+    const contentRequestResult = await queryAsync(contentRequestSql, [brandId]);
+    const contentRequestId = contentRequestResult.insertId;
+    
+    try {
+      // Generate enhanced prompt for DALL-E
+      const imagePrompt = `
+${concept.imageDescription}
+
+브랜드: ${project.name}
+스타일: ${concept.contentType}
+톤앤매너: 모던하고 세련된
+핵심 메시지: ${concept.coreMessage}
+
+인스타그램 피드용 고품질 이미지, 프로페셔널한 상업 사진 스타일
+      `.trim();
+
+      // Generate image using DALL-E
+      // Map custom sizes to supported DALL-E sizes
+      let imageSize: "1024x1024" | "1024x1536" | "1536x1024" = "1024x1024";
+      if (concept.imageSize === '4:5' || concept.imageSize === '3:4') {
+        imageSize = "1024x1536"; // Use portrait orientation for 4:5 and 3:4
+      } else if (concept.imageSize === '16:9') {
+        imageSize = "1536x1024"; // Use landscape orientation for 16:9
+      }
+      
+      const imageResult = await gptImageCreate({
+        prompt: imagePrompt,
+        saveImageName: `single_${createHashId(contentRequestId)}`,
+        size: imageSize
+      });
+
+      // Create content record
+      const contentSql = `
+        INSERT INTO content (
+          id,
+          fk_contentRequestId,
+          description,
+          hashtag,
+          image,
+          imageToken,
+          snsEvent,
+          textToken,
+          title,
+          contentType,
+          created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+      `;
+      
+      const contentId = createHashId(contentRequestId);
+      await queryAsync(contentSql, [
+        contentId,
+        contentRequestId,
+        concept.caption,
+        concept.hashtags,
+        imageResult.imageUrl,
+        imageResult.token || 0,
+        concept.snsEvent ? 1 : 0,
+        0,
+        concept.title,
+        concept.contentType,
+      ]);
+
+      // Update content request status
+      await queryAsync(
+        `UPDATE contentRequest SET status = 'completed' WHERE id = ?`,
+        [contentRequestId]
+      );
+
+      res.status(200).json({
+        success: true,
+        message: '이미지가 성공적으로 생성되었습니다.',
+        contentId: contentId,
+        imageUrl: imageResult.imageUrl
+      });
+
+    } catch (error) {
+      // Update status to failed if image generation fails
+      await queryAsync(
+        `UPDATE contentRequest SET status = 'failed' WHERE id = ?`,
+        [contentRequestId]
+      );
+      throw error;
+    }
+
+  } catch (error) {
+    console.error('[SINGLE IMAGE] Error:', error);
+    res.status(500).json({ error: '이미지 생성 중 오류가 발생했습니다.' });
+  }
+});
+
+// Get user's usage limits
+router.get('/usage-limits', isLogin, async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ message: '로그인이 필요합니다.' });
+    }
+
+    const limits = await getUserUsageLimits(userId);
+    
+    res.json({
+      success: true,
+      limits: {
+        projects: {
+          remaining: limits.projectsRemaining,
+          canCreate: limits.canCreateProject
+        },
+        singleImages: {
+          remaining: limits.singleImagesRemaining,
+          canCreate: limits.canCreateSingleImage
+        },
+        edits: {
+          remainingToday: limits.editsRemainingToday,
+          canEdit: limits.canEditContent
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Error getting usage limits:', error);
+    res.status(500).json({ message: '사용 한도 조회 중 오류가 발생했습니다.' });
   }
 });
 
