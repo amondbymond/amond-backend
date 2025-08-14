@@ -4,41 +4,29 @@ import { queryAsync } from "../module/commonFunction";
 import dotenv from "dotenv";
 dotenv.config();
 
-// INICIS 설정
+// INICIS Direct Billing Configuration
 const INICIS_CONFIG = {
   test: {
     mid: process.env.INICIS_TEST_MID || "INIBillTst",
-    signKey: process.env.INICIS_TEST_SIGN_KEY || "SU5JTElURV9UUklQTEVERVNfS0VZU1RS",
     apiKey: process.env.INICIS_TEST_API_KEY || "rKnPljRn5m6J9Mzz",
-    apiIv: process.env.INICIS_TEST_API_IV || "W2KLNKra6Wxc1P==",
-    // Using v2 API for billing
-    billingUrl: "https://iniapi.inicis.com/v2/pg/billing"
+    apiUrl: "https://iniapi.inicis.com/v2/pg"
   },
   production: {
     mid: process.env.INICIS_PROD_MID || "",
-    signKey: process.env.INICIS_PROD_SIGN_KEY || "",
     apiKey: process.env.INICIS_PROD_API_KEY || "",
-    apiIv: process.env.INICIS_PROD_API_IV || "",
-    billingUrl: "https://api.inicis.com/v2/pg/billing"
+    apiUrl: "https://api.inicis.com/v2/pg"
   }
 };
 
 const isProduction = process.env.NODE_ENV === "production";
 const config = isProduction ? INICIS_CONFIG.production : INICIS_CONFIG.test;
 
-// 테스트 모드 설정
+// Test mode for billing interval
 const TEST_MODE = process.env.BILLING_TEST_MODE === "true";
-const BILLING_INTERVAL_MINUTES = TEST_MODE ? 1 : 0; // 테스트: 1분, 프로덕션: 0 (실제 날짜 계산)
+const BILLING_INTERVAL_MINUTES = TEST_MODE ? 1 : 0;
 
 /**
- * SHA256 해시 생성 함수
- */
-function generateSHA256Hash(data: string): string {
-  return crypto.createHash("sha256").update(data).digest("hex");
-}
-
-/**
- * SHA512 해시 생성 함수 (v2 API용)
+ * SHA512 해시 생성 함수
  */
 function generateSHA512Hash(data: string): string {
   return crypto.createHash("sha512").update(data).digest("hex");
@@ -68,13 +56,13 @@ function getFormattedTimestamp(): string {
 }
 
 /**
- * 활성 구독자들의 정기결제 처리
+ * Process monthly billing using INICIS direct billing
  */
-export async function processMonthlyBilling() {
-  console.log("[Billing] Starting monthly billing process...");
+export async function processDirectMonthlyBilling() {
+  console.log("[INICIS Direct Billing] Starting monthly billing process...");
   
   try {
-    // 결제가 필요한 활성 구독자 조회
+    // Get subscriptions due for billing with proper BILLAUTH billing keys
     const activeSubs = await queryAsync(`
       SELECT 
         ps.*,
@@ -89,38 +77,40 @@ export async function processMonthlyBilling() {
       WHERE ps.status = 'active'
         AND ps.nextBillingDate <= NOW()
         AND ps.planType != 'basic'
+        AND bk.billingKey NOT LIKE 'StdpayCARD%'  -- Exclude StdPay keys, only use BILLAUTH keys
       ORDER BY ps.nextBillingDate ASC
       LIMIT 10
     `);
 
-    console.log(`[Billing] Found ${activeSubs.length} subscriptions due for billing`);
+    console.log(`[INICIS Direct Billing] Found ${activeSubs.length} subscriptions due for billing`);
 
     for (const subscription of activeSubs) {
-      await processSingleBilling(subscription);
-      // 요청 사이에 지연 추가 (rate limiting 방지)
+      await processSingleDirectBilling(subscription);
+      // Delay between requests
       await new Promise(resolve => setTimeout(resolve, 1000));
     }
 
-    console.log("[Billing] Monthly billing process completed");
+    console.log("[INICIS Direct Billing] Monthly billing process completed");
   } catch (error) {
-    console.error("[Billing] Error in processMonthlyBilling:", error);
+    console.error("[INICIS Direct Billing] Error in processMonthlyBilling:", error);
   }
 }
 
 /**
- * 개별 구독 결제 처리
+ * Process single subscription billing
  */
-async function processSingleBilling(subscription: any) {
+async function processSingleDirectBilling(subscription: any) {
   const timestamp = getFormattedTimestamp();
   const moid = `${config.mid}_${timestamp}`;
-  const type = "billing"; // billing 고정
-  const paymethod = "card"; // card 고정
+  const type = "billing";
+  const paymethod = "card";
   const clientIp = "127.0.0.1";
   
   try {
-    console.log(`[Billing] Processing payment for user ${subscription.fk_userId}, plan: ${subscription.planType}`);
+    console.log(`[INICIS Direct Billing] Processing payment for user ${subscription.fk_userId}, plan: ${subscription.planType}`);
+    console.log(`[INICIS Direct Billing] Using billing key: ${subscription.billingKey.substring(0, 20)}...`);
 
-    // Plan별 가격 설정
+    // Plan prices
     const planPrices: { [key: string]: number } = {
       'pro': 9900,
       'business': 29000,
@@ -130,7 +120,9 @@ async function processSingleBilling(subscription: any) {
     const price = planPrices[subscription.planType] || subscription.price;
     const goodName = `Amond ${subscription.planType.charAt(0).toUpperCase() + subscription.planType.slice(1)} 멤버십`;
 
-    // v2 API용 data 객체 생성 (INICIS 템플릿 참조)
+    // Create data object for billing request
+    // IMPORTANT: billKey here is the previously issued billing key from BILLAUTH,
+    // NOT "0" or a new key. We're using an existing key for recurring payment!
     const data = {
       url: "www.mond.io.kr",
       moid: moid,
@@ -139,15 +131,15 @@ async function processSingleBilling(subscription: any) {
       buyerEmail: subscription.email || "test@inicis.com",
       buyerTel: "01000000000",
       price: price.toString(),
-      billKey: subscription.billingKey // Bill API로 발급받은 빌링키 사용
+      billKey: subscription.billingKey // This MUST be a previously issued BILLAUTH key
     };
 
-    // Hash Encryption (INICIS 템플릿과 동일)
+    // Generate hash (INICIS INIAPI format)
     let plainTxt = config.apiKey + config.mid + type + timestamp + JSON.stringify(data);
     plainTxt = plainTxt.replace(/\\/g, ''); 
     const hashData = generateSHA512Hash(plainTxt);
 
-    // v2 API 요청 데이터
+    // Request data for INICIS billing API
     const requestData = {
       mid: config.mid,
       type: type,
@@ -158,10 +150,10 @@ async function processSingleBilling(subscription: any) {
       hashData: hashData
     };
 
-    console.log(`[Billing] Sending v2 API request for order ${moid}`);
+    console.log(`[INICIS Direct Billing] Sending billing request for order ${moid}`);
 
-    // INICIS v2 빌링 API 호출 (JSON)
-    const response = await axios.post(config.billingUrl, requestData, {
+    // Call INICIS billing API
+    const response = await axios.post(`${config.apiUrl}/billing`, requestData, {
       headers: {
         "Content-Type": "application/json",
         "Accept": "application/json"
@@ -171,7 +163,7 @@ async function processSingleBilling(subscription: any) {
 
     const result = response.data;
     
-    // 결제 로그 저장
+    // Save payment log
     await queryAsync(`
       INSERT INTO payment_logs (
         fk_userId,
@@ -200,18 +192,16 @@ async function processSingleBilling(subscription: any) {
     ]);
 
     if (result.resultCode === "00") {
-      console.log(`[Billing] SUCCESS - User ${subscription.fk_userId} charged ${price} KRW`);
-      console.log(`[Billing] TID: ${result.tid}`);
+      console.log(`[INICIS Direct Billing] SUCCESS - User ${subscription.fk_userId} charged ${price} KRW`);
+      console.log(`[INICIS Direct Billing] TID: ${result.tid}`);
       
-      // 결제 성공 시 다음 결제일 업데이트
+      // Update next billing date
       const nextBillingDate = new Date();
       
-      // 테스트 모드 또는 프로덕션 모드에 따라 다음 결제일 설정
       if (TEST_MODE) {
         nextBillingDate.setMinutes(nextBillingDate.getMinutes() + BILLING_INTERVAL_MINUTES);
         console.log(`[TEST MODE] Next billing in ${BILLING_INTERVAL_MINUTES} minute(s)`);
       } else {
-        // 프로덕션: 정확히 1달 후
         nextBillingDate.setMonth(nextBillingDate.getMonth() + 1);
       }
       
@@ -222,19 +212,32 @@ async function processSingleBilling(subscription: any) {
         WHERE id = ?
       `, [nextBillingDate, subscription.id]);
 
-      // 멤버십 종료일 연장
+      // Update membership end date
       await queryAsync(`
         UPDATE user 
         SET membershipEndDate = ?
         WHERE id = ?
       `, [nextBillingDate, subscription.fk_userId]);
 
-      console.log(`[Billing] Updated next billing date for user ${subscription.fk_userId}`);
+      console.log(`[INICIS Direct Billing] Updated next billing date for user ${subscription.fk_userId}`);
     } else {
-      // 결제 실패 처리
-      console.error(`[Billing] FAILED - User ${subscription.fk_userId}: ${result.resultMsg}`);
+      // Payment failed
+      console.error(`[INICIS Direct Billing] FAILED - User ${subscription.fk_userId}: ${result.resultMsg}`);
+      console.error(`[INICIS Direct Billing] Error Code: ${result.resultCode}`);
       
-      // 3회 실패 시 구독 일시정지
+      // Check if it's the "billing key not registered" error
+      if (result.resultCode === "01" && result.resultMsg?.includes("1195")) {
+        console.error(`[INICIS Direct Billing] Billing key not properly registered. User needs to re-register card with BILLAUTH process.`);
+        
+        // Deactivate the invalid billing key
+        await queryAsync(`
+          UPDATE billing_keys 
+          SET status = 'invalid' 
+          WHERE billingKey = ?
+        `, [subscription.billingKey]);
+      }
+      
+      // Check failure count
       const failCount = await queryAsync(`
         SELECT COUNT(*) as count 
         FROM payment_logs 
@@ -257,13 +260,13 @@ async function processSingleBilling(subscription: any) {
           WHERE id = ?
         `, [subscription.fk_userId]);
         
-        console.log(`[Billing] Subscription suspended for user ${subscription.fk_userId} after 3 failures`);
+        console.log(`[INICIS Direct Billing] Subscription suspended for user ${subscription.fk_userId} after 3 failures`);
       }
     }
   } catch (error) {
-    console.error(`[Billing] Error processing payment for user ${subscription.fk_userId}:`, error);
+    console.error(`[INICIS Direct Billing] Error processing payment for user ${subscription.fk_userId}:`, error);
     
-    // Plan별 가격 설정 (에러 처리를 위해 다시 정의)
+    // Save error log
     const planPrices: { [key: string]: number } = {
       'pro': 9900,
       'business': 29000,
@@ -271,7 +274,6 @@ async function processSingleBilling(subscription: any) {
     };
     const price = planPrices[subscription.planType] || subscription.price;
     
-    // 에러 로그 저장
     await queryAsync(`
       INSERT INTO payment_logs (
         fk_userId,
@@ -301,52 +303,45 @@ async function processSingleBilling(subscription: any) {
 }
 
 /**
- * 만료된 멤버십 처리
+ * Check if a billing key is valid BILLAUTH key
  */
-export async function processExpiredMemberships() {
-  console.log("[Billing] Checking for expired memberships...");
-  
-  try {
-    // 만료된 멤버십을 basic으로 다운그레이드
-    const result = await queryAsync(`
-      UPDATE user 
-      SET grade = 'basic', 
-          membershipStatus = 'expired'
-      WHERE grade IN ('pro', 'business', 'premium')
-        AND membershipEndDate < NOW()
-        AND membershipStatus IN ('active', 'cancelled')
-    `);
+export async function isValidBillingKey(billingKey: string): Promise<boolean> {
+  // BILLAUTH keys don't start with "StdpayCARD"
+  // They have different format issued through WebStandard BILLAUTH process
+  return !billingKey.startsWith("StdpayCARD");
+}
 
-    if (result.affectedRows > 0) {
-      console.log(`[Billing] Downgraded ${result.affectedRows} expired memberships to basic`);
-    }
-    
-    // 취소된 구독 중 만료일이 지난 것들을 expired로 변경
-    const expiredSubs = await queryAsync(`
-      UPDATE payment_subscriptions 
-      SET status = 'expired',
-          updatedAt = NOW()
-      WHERE status = 'cancelled' 
-        AND nextBillingDate < NOW()
-    `);
-    
-    if (expiredSubs.affectedRows > 0) {
-      console.log(`[Billing] Marked ${expiredSubs.affectedRows} cancelled subscriptions as expired`);
-    }
-    
-    // 정지된 구독 중 7일이 지난 것들을 expired로 변경
-    const suspendedExpired = await queryAsync(`
-      UPDATE payment_subscriptions 
-      SET status = 'expired',
-          updatedAt = NOW()
-      WHERE status = 'suspended' 
-        AND updatedAt < DATE_SUB(NOW(), INTERVAL 7 DAY)
-    `);
-    
-    if (suspendedExpired.affectedRows > 0) {
-      console.log(`[Billing] Marked ${suspendedExpired.affectedRows} suspended subscriptions as expired`);
-    }
-  } catch (error) {
-    console.error("[Billing] Error processing expired memberships:", error);
+/**
+ * Get billing key status for a user
+ */
+export async function getUserBillingStatus(userId: number): Promise<{
+  hasBillingKey: boolean;
+  isValidKey: boolean;
+  needsReregistration: boolean;
+  billingKey?: string;
+}> {
+  const [billingKeys] = await queryAsync(`
+    SELECT billingKey, status 
+    FROM billing_keys 
+    WHERE fk_userId = ? AND status = 'active' 
+    ORDER BY id DESC LIMIT 1
+  `, [userId]);
+  
+  if (billingKeys.length === 0) {
+    return {
+      hasBillingKey: false,
+      isValidKey: false,
+      needsReregistration: true
+    };
   }
+  
+  const billingKey = billingKeys[0].billingKey;
+  const isValid = await isValidBillingKey(billingKey);
+  
+  return {
+    hasBillingKey: true,
+    isValidKey: isValid,
+    needsReregistration: !isValid,
+    billingKey: billingKey
+  };
 }

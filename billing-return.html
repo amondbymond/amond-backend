@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>빌링키 발급 결과</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        .success { color: green; }
+        .error { color: red; }
+        .result-box {
+            border: 1px solid #ddd;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 5px;
+            background-color: #f9f9f9;
+        }
+        button {
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <h1>빌링키 발급 결과</h1>
+    
+    <div class="result-box">
+        <h3>받은 파라미터:</h3>
+        <pre id="params"></pre>
+    </div>
+    
+    <div id="result"></div>
+    
+    <button onclick="saveAndReturn()">빌링키 저장하고 돌아가기</button>
+
+    <script>
+        // URL 파라미터 파싱
+        const urlParams = new URLSearchParams(window.location.search);
+        const params = {};
+        for (const [key, value] of urlParams) {
+            params[key] = value;
+        }
+        
+        // 파라미터 표시
+        document.getElementById('params').textContent = JSON.stringify(params, null, 2);
+        
+        // 결과 처리
+        if (params.resultCode === '0000') {
+            // 성공
+            let billKey = params.billKey || params.CARD_BillKey || params.authToken;
+            
+            if (billKey) {
+                document.getElementById('result').innerHTML = `
+                    <div class="success">
+                        <h3>✅ 빌링키 발급 성공!</h3>
+                        <p><strong>빌링키:</strong> ${billKey}</p>
+                        <p><strong>주문번호:</strong> ${params.orderNumber || params.oid}</p>
+                        <p><strong>결과 메시지:</strong> ${params.resultMsg}</p>
+                    </div>
+                `;
+                
+                // 빌링키를 로컬 스토리지에 저장
+                const billingInfo = {
+                    billKey: billKey,
+                    orderNumber: params.orderNumber || params.oid,
+                    cardInfo: params.authenticatedString || '카드 정보',
+                    expireDate: params.billKeyExpireDate || '',
+                    timestamp: new Date().toISOString()
+                };
+                
+                localStorage.setItem('inicis_billing_key', JSON.stringify(billingInfo));
+            } else {
+                document.getElementById('result').innerHTML = `
+                    <div class="error">
+                        <h3>⚠️ 빌링키를 받지 못했습니다.</h3>
+                        <p>authToken이 있다면 서버에서 승인 요청을 해야 합니다.</p>
+                        <p><strong>authToken:</strong> ${params.authToken}</p>
+                        <p><strong>authUrl:</strong> ${params.authUrl}</p>
+                    </div>
+                `;
+            }
+        } else {
+            // 실패
+            document.getElementById('result').innerHTML = `
+                <div class="error">
+                    <h3>❌ 빌링키 발급 실패</h3>
+                    <p><strong>에러 코드:</strong> ${params.resultCode}</p>
+                    <p><strong>에러 메시지:</strong> ${params.resultMsg}</p>
+                </div>
+            `;
+        }
+        
+        function saveAndReturn() {
+            // 부모 창이 있으면 메시지 전송
+            if (window.opener) {
+                window.opener.postMessage({
+                    type: 'billing_key_result',
+                    params: params
+                }, '*');
+                window.close();
+            } else {
+                // 부모 창이 없으면 테스트 페이지로 이동
+                window.location.href = '/test-billing-complete.html';
+            }
+        }
+    </script>
+</body>
+</html>

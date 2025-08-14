@@ -1242,7 +1242,7 @@ async function checkLimitUpdate({
 
 // Image scraping OPTIONS handler for preflight requests
 router.options("/scrape-images", function (req, res) {
-  const origin = req.headers.origin || 'https://main.dpvdj8dsmc7us.amplifyapp.com';
+  const origin = req.headers.origin || 'https://mond.io.kr';
   res.setHeader('Access-Control-Allow-Origin', origin);
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
@@ -1266,7 +1266,7 @@ router.post("/scrape-images", async function (req, res) {
   
   // Ensure CORS headers are set early
   try {
-    const origin = req.headers.origin || 'https://main.dpvdj8dsmc7us.amplifyapp.com';
+    const origin = req.headers.origin || 'https://mond.io.kr';
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Access-Control-Allow-Credentials', 'true');
     res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
@@ -1284,7 +1284,7 @@ router.post("/scrape-images", async function (req, res) {
 
 // Brand summary OPTIONS handler for preflight requests
 router.options("/brand-summary", function (req, res) {
-  const origin = req.headers.origin || 'https://main.dpvdj8dsmc7us.amplifyapp.com';
+  const origin = req.headers.origin || 'https://mond.io.kr';
   res.setHeader('Access-Control-Allow-Origin', origin);
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
@@ -1307,7 +1307,7 @@ router.post("/brand-summary", async function (req: any, res: any) {
   
   // Ensure CORS headers are set early
   try {
-    const origin = req.headers.origin || 'https://main.dpvdj8dsmc7us.amplifyapp.com';
+    const origin = req.headers.origin || 'https://mond.io.kr';
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Access-Control-Allow-Credentials', 'true');
     res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
@@ -1437,7 +1437,7 @@ router.post("/brand-summary", async function (req: any, res: any) {
     
     // Try to send error response with CORS headers
     try {
-      const origin = req.headers.origin || 'https://main.dpvdj8dsmc7us.amplifyapp.com';
+      const origin = req.headers.origin || 'https://mond.io.kr';
       res.setHeader('Access-Control-Allow-Origin', origin);
       res.setHeader('Access-Control-Allow-Credentials', 'true');
     } catch (e) {

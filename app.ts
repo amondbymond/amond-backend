@@ -84,6 +84,8 @@ import authRouter from "./router/auth";
 import contentRouter from "./router/content";
 import adminRouter from "./router/admin";
 import paymentRouter from "./router/payment";
+import billPaymentRouter from "./router/billPayment";
+import inicisWebstandardRouter from "./router/inicisWebstandard";
 import brandRouter from "./router/brand";
 import singleImageRouter from "./router/singleImage";
 
@@ -91,6 +93,8 @@ app.use("/auth", authRouter);
 app.use("/admin", adminRouter);
 app.use("/content", contentRouter);
 app.use("/payment", paymentRouter);
+app.use("/bill-payment", billPaymentRouter);
+app.use("/inicis-webstandard", inicisWebstandardRouter);
 app.use("/brand", brandRouter);
 app.use("/api/ai", singleImageRouter);
 

@@ -1,77 +1,62 @@
 import axios from "axios";
-import crypto from "crypto";
 import { queryAsync } from "../module/commonFunction";
 import dotenv from "dotenv";
 dotenv.config();
 
-// INICIS 설정
-const INICIS_CONFIG = {
-  test: {
-    mid: process.env.INICIS_TEST_MID || "INIBillTst",
-    signKey: process.env.INICIS_TEST_SIGN_KEY || "SU5JTElURV9UUklQTEVERVNfS0VZU1RS",
-    apiKey: process.env.INICIS_TEST_API_KEY || "rKnPljRn5m6J9Mzz",
-    apiIv: process.env.INICIS_TEST_API_IV || "W2KLNKra6Wxc1P==",
-    // Using v2 API for billing
-    billingUrl: "https://iniapi.inicis.com/v2/pg/billing"
-  },
-  production: {
-    mid: process.env.INICIS_PROD_MID || "",
-    signKey: process.env.INICIS_PROD_SIGN_KEY || "",
-    apiKey: process.env.INICIS_PROD_API_KEY || "",
-    apiIv: process.env.INICIS_PROD_API_IV || "",
-    billingUrl: "https://api.inicis.com/v2/pg/billing"
-  }
+// Iamport 설정
+const IAMPORT_CONFIG = {
+  apiKey: process.env.IAMPORT_API_KEY || "3170176238757586", // 테스트 API Key
+  apiSecret: process.env.IAMPORT_API_SECRET || "6e3ae0d4bd08a75cdaa659f99b5ca68e4e1b2e39e1e37f5fc17b5ac8e97e088a7f4c77f0d4de1eb6", // 테스트 API Secret
+  apiUrl: "https://api.iamport.kr"
 };
-
-const isProduction = process.env.NODE_ENV === "production";
-const config = isProduction ? INICIS_CONFIG.production : INICIS_CONFIG.test;
 
 // 테스트 모드 설정
 const TEST_MODE = process.env.BILLING_TEST_MODE === "true";
 const BILLING_INTERVAL_MINUTES = TEST_MODE ? 1 : 0; // 테스트: 1분, 프로덕션: 0 (실제 날짜 계산)
 
 /**
- * SHA256 해시 생성 함수
+ * Iamport Access Token 발급
  */
-function generateSHA256Hash(data: string): string {
-  return crypto.createHash("sha256").update(data).digest("hex");
-}
+async function getIamportAccessToken(): Promise<string> {
+  try {
+    const response = await axios.post(`${IAMPORT_CONFIG.apiUrl}/users/getToken`, {
+      imp_key: IAMPORT_CONFIG.apiKey,
+      imp_secret: IAMPORT_CONFIG.apiSecret
+    });
 
-/**
- * SHA512 해시 생성 함수 (v2 API용)
- */
-function generateSHA512Hash(data: string): string {
-  return crypto.createHash("sha512").update(data).digest("hex");
-}
-
-/**
- * YYYYMMDDHHMMSS 형식의 timestamp 생성
- */
-function getFormattedTimestamp(): string {
-  const now = new Date();
-  const pad = (n: number, length: number): string => {
-    let str = '' + n;
-    while (str.length < length) {
-      str = '0' + str;
+    if (response.data.code === 0) {
+      return response.data.response.access_token;
+    } else {
+      throw new Error(`Failed to get access token: ${response.data.message}`);
     }
-    return str;
-  };
-  
-  const yyyy = now.getFullYear().toString();
-  const MM = pad(now.getMonth() + 1, 2);
-  const dd = pad(now.getDate(), 2);
-  const hh = pad(now.getHours(), 2);
-  const mm = pad(now.getMinutes(), 2);
-  const ss = pad(now.getSeconds(), 2);
-  
-  return yyyy + MM + dd + hh + mm + ss;
+  } catch (error) {
+    console.error("[Iamport] Error getting access token:", error);
+    throw error;
+  }
 }
 
 /**
- * 활성 구독자들의 정기결제 처리
+ * 주문번호 생성 함수
  */
-export async function processMonthlyBilling() {
-  console.log("[Billing] Starting monthly billing process...");
+function generateMerchantUid(): string {
+  const now = new Date();
+  const dateStr = now.toISOString().replace(/[^0-9]/g, '').slice(0, 14);
+  const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+  return `MOND_${dateStr}_${random}`;
+}
+
+/**
+ * customer_uid 생성 (userId 기반)
+ */
+function getCustomerUid(userId: number): string {
+  return `customer_${userId}`;
+}
+
+/**
+ * Iamport를 통한 정기결제 처리
+ */
+export async function processIamportBilling() {
+  console.log("[Iamport Billing] Starting monthly billing process...");
   
   try {
     // 결제가 필요한 활성 구독자 조회
@@ -93,32 +78,33 @@ export async function processMonthlyBilling() {
       LIMIT 10
     `);
 
-    console.log(`[Billing] Found ${activeSubs.length} subscriptions due for billing`);
+    console.log(`[Iamport Billing] Found ${activeSubs.length} subscriptions due for billing`);
+
+    // Access token 먼저 발급
+    const accessToken = await getIamportAccessToken();
+    console.log("[Iamport Billing] Access token obtained");
 
     for (const subscription of activeSubs) {
-      await processSingleBilling(subscription);
+      await processSingleIamportBilling(subscription, accessToken);
       // 요청 사이에 지연 추가 (rate limiting 방지)
       await new Promise(resolve => setTimeout(resolve, 1000));
     }
 
-    console.log("[Billing] Monthly billing process completed");
+    console.log("[Iamport Billing] Monthly billing process completed");
   } catch (error) {
-    console.error("[Billing] Error in processMonthlyBilling:", error);
+    console.error("[Iamport Billing] Error in processIamportBilling:", error);
   }
 }
 
 /**
- * 개별 구독 결제 처리
+ * 개별 구독 결제 처리 (Iamport API 사용)
  */
-async function processSingleBilling(subscription: any) {
-  const timestamp = getFormattedTimestamp();
-  const moid = `${config.mid}_${timestamp}`;
-  const type = "billing"; // billing 고정
-  const paymethod = "card"; // card 고정
-  const clientIp = "127.0.0.1";
+async function processSingleIamportBilling(subscription: any, accessToken: string) {
+  const merchantUid = generateMerchantUid();
+  const customerUid = getCustomerUid(subscription.fk_userId);
   
   try {
-    console.log(`[Billing] Processing payment for user ${subscription.fk_userId}, plan: ${subscription.planType}`);
+    console.log(`[Iamport Billing] Processing payment for user ${subscription.fk_userId}, plan: ${subscription.planType}`);
 
     // Plan별 가격 설정
     const planPrices: { [key: string]: number } = {
@@ -128,46 +114,31 @@ async function processSingleBilling(subscription: any) {
     };
 
     const price = planPrices[subscription.planType] || subscription.price;
-    const goodName = `Amond ${subscription.planType.charAt(0).toUpperCase() + subscription.planType.slice(1)} 멤버십`;
+    const name = `Amond ${subscription.planType.charAt(0).toUpperCase() + subscription.planType.slice(1)} 멤버십`;
 
-    // v2 API용 data 객체 생성 (INICIS 템플릿 참조)
-    const data = {
-      url: "www.mond.io.kr",
-      moid: moid,
-      goodName: goodName,
-      buyerName: subscription.name || subscription.email?.split('@')[0] || "구매자",
-      buyerEmail: subscription.email || "test@inicis.com",
-      buyerTel: "01000000000",
-      price: price.toString(),
-      billKey: subscription.billingKey // Bill API로 발급받은 빌링키 사용
-    };
+    console.log(`[Iamport Billing] Requesting payment for order ${merchantUid}`);
 
-    // Hash Encryption (INICIS 템플릿과 동일)
-    let plainTxt = config.apiKey + config.mid + type + timestamp + JSON.stringify(data);
-    plainTxt = plainTxt.replace(/\\/g, ''); 
-    const hashData = generateSHA512Hash(plainTxt);
-
-    // v2 API 요청 데이터
-    const requestData = {
-      mid: config.mid,
-      type: type,
-      paymethod: paymethod,
-      timestamp: timestamp,
-      clientIp: clientIp,
-      data: data,
-      hashData: hashData
-    };
-
-    console.log(`[Billing] Sending v2 API request for order ${moid}`);
-
-    // INICIS v2 빌링 API 호출 (JSON)
-    const response = await axios.post(config.billingUrl, requestData, {
-      headers: {
-        "Content-Type": "application/json",
-        "Accept": "application/json"
+    // Iamport 정기결제 API 호출
+    const response = await axios.post(
+      `${IAMPORT_CONFIG.apiUrl}/subscribe/payments/again`,
+      {
+        customer_uid: customerUid,
+        merchant_uid: merchantUid,
+        amount: price,
+        name: name,
+        buyer_name: subscription.name || subscription.email?.split('@')[0] || "고객",
+        buyer_email: subscription.email || "noreply@amond.io",
+        buyer_tel: "01000000000",
+        buyer_addr: "서울특별시",
+        buyer_postcode: "00000"
       },
-      timeout: 30000
-    });
+      {
+        headers: {
+          "Authorization": accessToken,
+          "Content-Type": "application/json"
+        }
+      }
+    );
 
     const result = response.data;
     
@@ -188,20 +159,20 @@ async function processSingleBilling(subscription: any) {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
     `, [
       subscription.fk_userId,
-      moid,
+      merchantUid,
       subscription.billingKey,
       price,
-      goodName,
-      subscription.name || subscription.email?.split('@')[0] || "구매자",
+      name,
+      subscription.name || subscription.email?.split('@')[0] || "고객",
       "01000000000",
-      subscription.email || "test@inicis.com",
-      (result.resultCode === "00") ? "success" : "failed",
+      subscription.email || "noreply@amond.io",
+      result.code === 0 ? "success" : "failed",
       JSON.stringify(result)
     ]);
 
-    if (result.resultCode === "00") {
-      console.log(`[Billing] SUCCESS - User ${subscription.fk_userId} charged ${price} KRW`);
-      console.log(`[Billing] TID: ${result.tid}`);
+    if (result.code === 0) {
+      console.log(`[Iamport Billing] SUCCESS - User ${subscription.fk_userId} charged ${price} KRW`);
+      console.log(`[Iamport Billing] Transaction ID: ${result.response.imp_uid}`);
       
       // 결제 성공 시 다음 결제일 업데이트
       const nextBillingDate = new Date();
@@ -229,10 +200,22 @@ async function processSingleBilling(subscription: any) {
         WHERE id = ?
       `, [nextBillingDate, subscription.fk_userId]);
 
-      console.log(`[Billing] Updated next billing date for user ${subscription.fk_userId}`);
+      console.log(`[Iamport Billing] Updated next billing date for user ${subscription.fk_userId}`);
     } else {
       // 결제 실패 처리
-      console.error(`[Billing] FAILED - User ${subscription.fk_userId}: ${result.resultMsg}`);
+      console.error(`[Iamport Billing] FAILED - User ${subscription.fk_userId}: ${result.message}`);
+      
+      // 실패 사유가 빌링키 문제인 경우
+      if (result.message && result.message.includes("빌링키")) {
+        console.error(`[Iamport Billing] Billing key issue for user ${subscription.fk_userId}`);
+        
+        // 빌링키를 비활성화
+        await queryAsync(`
+          UPDATE billing_keys 
+          SET status = 'inactive' 
+          WHERE fk_userId = ? AND billingKey = ?
+        `, [subscription.fk_userId, subscription.billingKey]);
+      }
       
       // 3회 실패 시 구독 일시정지
       const failCount = await queryAsync(`
@@ -257,11 +240,11 @@ async function processSingleBilling(subscription: any) {
           WHERE id = ?
         `, [subscription.fk_userId]);
         
-        console.log(`[Billing] Subscription suspended for user ${subscription.fk_userId} after 3 failures`);
+        console.log(`[Iamport Billing] Subscription suspended for user ${subscription.fk_userId} after 3 failures`);
       }
     }
   } catch (error) {
-    console.error(`[Billing] Error processing payment for user ${subscription.fk_userId}:`, error);
+    console.error(`[Iamport Billing] Error processing payment for user ${subscription.fk_userId}:`, error);
     
     // Plan별 가격 설정 (에러 처리를 위해 다시 정의)
     const planPrices: { [key: string]: number } = {
@@ -288,13 +271,13 @@ async function processSingleBilling(subscription: any) {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'failed', ?, NOW())
     `, [
       subscription.fk_userId,
-      moid,
+      merchantUid,
       subscription.billingKey,
       price,
       `Amond ${subscription.planType} 멤버십`,
-      subscription.name || subscription.email?.split('@')[0] || "구매자",
+      subscription.name || subscription.email?.split('@')[0] || "고객",
       "01000000000",
-      subscription.email || "test@inicis.com",
+      subscription.email || "noreply@amond.io",
       JSON.stringify({ error: error instanceof Error ? error.message : String(error) })
     ]);
   }
@@ -304,7 +287,7 @@ async function processSingleBilling(subscription: any) {
  * 만료된 멤버십 처리
  */
 export async function processExpiredMemberships() {
-  console.log("[Billing] Checking for expired memberships...");
+  console.log("[Iamport Billing] Checking for expired memberships...");
   
   try {
     // 만료된 멤버십을 basic으로 다운그레이드
@@ -318,7 +301,7 @@ export async function processExpiredMemberships() {
     `);
 
     if (result.affectedRows > 0) {
-      console.log(`[Billing] Downgraded ${result.affectedRows} expired memberships to basic`);
+      console.log(`[Iamport Billing] Downgraded ${result.affectedRows} expired memberships to basic`);
     }
     
     // 취소된 구독 중 만료일이 지난 것들을 expired로 변경
@@ -331,7 +314,7 @@ export async function processExpiredMemberships() {
     `);
     
     if (expiredSubs.affectedRows > 0) {
-      console.log(`[Billing] Marked ${expiredSubs.affectedRows} cancelled subscriptions as expired`);
+      console.log(`[Iamport Billing] Marked ${expiredSubs.affectedRows} cancelled subscriptions as expired`);
     }
     
     // 정지된 구독 중 7일이 지난 것들을 expired로 변경
@@ -344,9 +327,9 @@ export async function processExpiredMemberships() {
     `);
     
     if (suspendedExpired.affectedRows > 0) {
-      console.log(`[Billing] Marked ${suspendedExpired.affectedRows} suspended subscriptions as expired`);
+      console.log(`[Iamport Billing] Marked ${suspendedExpired.affectedRows} suspended subscriptions as expired`);
     }
   } catch (error) {
-    console.error("[Billing] Error processing expired memberships:", error);
+    console.error("[Iamport Billing] Error processing expired memberships:", error);
   }
 }

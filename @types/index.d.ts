@@ -18,4 +18,6 @@ declare global {
 export type ReqUser = {
   id: number;
   grade?: string;
+  email?: string;
+  name?: string;
 };

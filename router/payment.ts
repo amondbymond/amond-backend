@@ -80,6 +80,15 @@ function generateSHA256Hash(data: string): string {
 }
 
 /**
+ * Check if payment should use BILLAUTH for recurring
+ * UPDATED: Now returns false for all payments (one-time only)
+ */
+function shouldUseBillAuth(goodname: string): boolean {
+  // Disabled - all payments are now one-time
+  return false;
+}
+
+/**
  * INICIS 빌링키 요청용 해시 생성
  * POST /payment/inicis/generate-hashes
  */
@@ -160,6 +169,20 @@ router.post("/inicis/generate-hashes", async function (req, res) {
     const mKey = generateSHA256Hash(mKeyData);
 
     console.log("해시 생성 성공:", { oid, numPrice, timestamp });
+    
+    // Check if this is a recurring plan that needs BILLAUTH
+    const needsBillAuth = shouldUseBillAuth(goodname);
+    
+    if (needsBillAuth) {
+      console.log("[Payment] Recurring plan detected - redirecting to BILLAUTH flow");
+      // Return special flag to frontend to use BILLAUTH flow
+      return res.status(200).json({
+        success: true,
+        requiresBillAuth: true,
+        message: "정기결제 상품은 카드 등록이 필요합니다.",
+        billAuthUrl: "/inicis-webstandard/billing-auth"
+      });
+    }
 
     res.status(200).json({
       success: true,
@@ -176,11 +199,12 @@ router.post("/inicis/generate-hashes", async function (req, res) {
         buyerEmail: buyeremail,
         goodName: goodname,
         returnUrl: isProduction 
-          ? "https://service.mond.io.kr/payment/inicis-return"
-          : "http://localhost:3000/payment/inicis-return",
+          ? "https://mond.io.kr/service/payment/inicis-return"
+          : "http://localhost:3000/service/payment/inicis-return",
         closeUrl: isProduction
-          ? "https://service.mond.io.kr/payment/billing-close"
-          : "http://localhost:3000/payment/billing-close"
+          ? "https://mond.io.kr/service/payment/billing-close"
+          : "http://localhost:3000/service/payment/billing-close",
+        acceptmethod: "" // No BILLAUTH for one-time payments
       }
     });
 
@@ -830,7 +854,7 @@ router.post("/inicis/return",
     // 필수 파라미터 확인
     if (!resultCode) {
       console.error("resultCode가 누락되었습니다.");
-      return res.redirect(`http://localhost:3000/payment/success?error=missing_result_code`);
+      return res.redirect(`http://localhost:3000/service/payment/success?error=missing_result_code`);
     }
 
     // 결과 코드 확인
@@ -851,7 +875,7 @@ router.post("/inicis/return",
       if (charset) params.append('charset', charset);
       if (merchantData) params.append('merchantData', merchantData);
 
-      const redirectUrl = `http://localhost:3000/payment/billing-process?${params.toString()}`;
+      const redirectUrl = `http://localhost:3000/service/payment/billing-process?${params.toString()}`;
       console.log("성공 리다이렉트 URL:", redirectUrl);
       
       return res.redirect(redirectUrl);
@@ -866,7 +890,7 @@ router.post("/inicis/return",
       if (resultMsg) errorParams.append('resultMsg', resultMsg);
       if (orderNumber) errorParams.append('orderNumber', orderNumber);
 
-      const errorRedirectUrl = `http://localhost:3000/payment/success?${errorParams.toString()}`;
+      const errorRedirectUrl = `http://localhost:3000/service/payment/success?${errorParams.toString()}`;
       console.log("실패 리다이렉트 URL:", errorRedirectUrl);
       
       return res.redirect(errorRedirectUrl);
@@ -880,7 +904,7 @@ router.post("/inicis/return",
     errorParams.append('error', 'server_error');
     errorParams.append('message', 'Internal server error occurred');
     
-    return res.redirect(`http://localhost:3000/payment/success?${errorParams.toString()}`);
+    return res.redirect(`http://localhost:3000/service/payment/success?${errorParams.toString()}`);
   }
 });
 

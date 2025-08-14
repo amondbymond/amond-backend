@@ -18,8 +18,8 @@ import { isLogin } from "../module/needAuth";
 // Get the frontend URL from environment variable or use default
 const frontendUrl = process.env.FRONTEND_URL || 
   (process.env.NODE_ENV === "production" 
-    ? "https://service.mond.io.kr" 
-    : "http://localhost:3000");
+    ? "https://mond.io.kr/service" 
+    : "http://localhost:3000/service");
 
 const failUrl = `${frontendUrl}/login`;
 const successUrl = `${frontendUrl}/login/success`;
@@ -570,9 +570,9 @@ router.post("/findPassword", async function (req, res) {
               <tr>
                 <td>
                   <div style="text-align: center">
-                    <a href="https://mond.io.kr" target="_blank">
+                    <a href="https://mond.io.kr/service" target="_blank">
                       <img
-                        src="https://mond.io.kr/logo.png"
+                        src="https://mond.io.kr/service/logo.png"
                         alt="Logo"
                         style="width: 100px; height: 100px"
                       />

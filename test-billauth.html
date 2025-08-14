@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>INICIS 빌링키 발급 테스트</title>
+    <script type="text/javascript" src="https://stgstdpay.inicis.com/stdjs/INIStdPay.js" charset="UTF-8"></script>
+</head>
+<body>
+    <h1>INICIS 빌링키 발급 테스트</h1>
+    <button onclick="requestBillingKey()">빌링키 발급</button>
+    
+    <form id="SendPayForm_id" name="SendPayForm_id" method="POST" style="display:none;">
+        <input type="hidden" name="version" value="1.0">
+        <input type="hidden" name="mid" value="INIBillTst">
+        <input type="hidden" name="oid" value="">
+        <input type="hidden" name="price" value="0">
+        <input type="hidden" name="timestamp" value="">
+        <input type="hidden" name="signature" value="">
+        <input type="hidden" name="mKey" value="">
+        <input type="hidden" name="currency" value="WON">
+        <input type="hidden" name="goodname" value="Amond 정기결제 등록">
+        <input type="hidden" name="buyername" value="홍길동">
+        <input type="hidden" name="buyertel" value="01012341234">
+        <input type="hidden" name="buyeremail" value="test@test.com">
+        <input type="hidden" name="returnUrl" value="http://localhost:3000/test-return.html">
+        <input type="hidden" name="closeUrl" value="http://localhost:3000/test-close.html">
+        <input type="hidden" name="gopaymethod" value="Card">
+        <input type="hidden" name="acceptmethod" value="BILLAUTH(Card)">
+        <input type="hidden" name="charset" value="UTF-8">
+        <input type="hidden" name="languageView" value="ko">
+        <input type="hidden" name="payViewType" value="popup">
+        <input type="hidden" name="popupUrl" value="http://localhost:3000/payment/popup">
+    </form>
+    
+    <script>
+        async function sha256(message) {
+            const msgBuffer = new TextEncoder().encode(message);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+            return hashHex;
+        }
+        
+        async function requestBillingKey() {
+            const timestamp = Date.now().toString();
+            const oid = "BILL_" + new Date().toISOString().replace(/[-:T.]/g, '').substr(0, 14) + "_TEST";
+            const price = "0";
+            
+            // Set form values
+            document.getElementsByName("oid")[0].value = oid;
+            document.getElementsByName("timestamp")[0].value = timestamp;
+            
+            // Generate mKey
+            const signKey = "SU5JTElURV9UUklQTEVERVNfS0VZU1RS";
+            const mKey = await sha256(signKey);
+            document.getElementsByName("mKey")[0].value = mKey;
+            
+            // Generate signature
+            const signatureData = "oid=" + oid + "&price=" + price + "&timestamp=" + timestamp;
+            const signature = await sha256(signatureData);
+            document.getElementsByName("signature")[0].value = signature;
+            
+            console.log("OID:", oid);
+            console.log("Timestamp:", timestamp);
+            console.log("mKey:", mKey);
+            console.log("Signature:", signature);
+            
+            // Call INICIS
+            try {
+                INIStdPay.pay('SendPayForm_id');
+            } catch (e) {
+                console.error("Error:", e);
+                alert("Error: " + e.message);
+            }
+        }
+    </script>
+</body>
+</html>

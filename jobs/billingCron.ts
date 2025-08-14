@@ -1,5 +1,8 @@
 import cron from "node-cron";
 import { processMonthlyBilling, processExpiredMemberships } from "../services/billingService";
+import { processMockMonthlyBilling, processExpiredMemberships as processMockExpiredMemberships } from "../services/mockBillingService";
+import { processDirectMonthlyBilling } from "../services/inicisDirectBillingService";
+import { processAllRecurringPayments } from "../services/inicisRecurringBillingService";
 
 /**
  * 정기결제 크론 작업 설정
@@ -14,8 +17,23 @@ export function initBillingCron() {
     console.log("[CRON] 정기결제 작업 시작 - " + new Date().toISOString());
     
     try {
-      // 정기결제 처리
-      await processMonthlyBilling();
+      // 정기결제 처리 - 모드 선택
+      const useMockBilling = process.env.USE_MOCK_BILLING === "true";
+      const useDirectBilling = process.env.USE_DIRECT_BILLING === "true";
+      const useRecurringBilling = process.env.USE_RECURRING_BILLING === "true";
+      
+      if (useMockBilling) {
+        console.log("[CRON] Using MOCK billing for testing");
+        await processMockMonthlyBilling();
+      } else if (useDirectBilling) {
+        console.log("[CRON] Using INICIS Direct billing");
+        await processDirectMonthlyBilling();
+      } else if (useRecurringBilling) {
+        console.log("[CRON] Using INICIS Recurring billing (WebStandard billing key)");
+        await processAllRecurringPayments();
+      } else {
+        await processMonthlyBilling();
+      }
       
       // 만료된 멤버십 처리
       await processExpiredMemberships();
@@ -47,8 +65,23 @@ export async function runBillingNow() {
   console.log("[MANUAL] 수동 정기결제 실행 - " + new Date().toISOString());
   
   try {
-    await processMonthlyBilling();
-    await processExpiredMemberships();
+    const useMockBilling = process.env.USE_MOCK_BILLING === "true";
+    const useDirectBilling = process.env.USE_DIRECT_BILLING === "true";
+    const useRecurringBilling = process.env.USE_RECURRING_BILLING === "true";
+    
+    if (useMockBilling) {
+      await processMockMonthlyBilling();
+      await processMockExpiredMemberships();
+    } else if (useDirectBilling) {
+      await processDirectMonthlyBilling();
+      await processExpiredMemberships();
+    } else if (useRecurringBilling) {
+      await processAllRecurringPayments();
+      await processExpiredMemberships();
+    } else {
+      await processMonthlyBilling();
+      await processExpiredMemberships();
+    }
     console.log("[MANUAL] 수동 정기결제 완료");
   } catch (error) {
     console.error("[MANUAL] 수동 정기결제 실패:", error);

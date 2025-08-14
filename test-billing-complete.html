@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>INICIS 빌링 전체 테스트</title>
+    <script type="text/javascript" src="https://stgstdpay.inicis.com/stdjs/INIStdPay.js" charset="UTF-8"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .section {
+            border: 1px solid #ddd;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+        }
+        input[type="text"], input[type="email"], input[type="tel"] {
+            width: 100%;
+            padding: 8px;
+            margin: 5px 0;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .result {
+            background-color: #f0f0f0;
+            padding: 10px;
+            margin-top: 10px;
+            border-radius: 4px;
+            white-space: pre-wrap;
+        }
+        .billing-key-info {
+            background-color: #e0f7fa;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <h1>INICIS 빌링 전체 테스트</h1>
+    
+    <!-- Step 1: 빌링키 발급 -->
+    <div class="section">
+        <h2>Step 1: 빌링키 발급 (카드 등록)</h2>
+        <form id="userInfoForm">
+            <label>이름: <input type="text" id="buyername" value="홍길동" required></label>
+            <label>전화번호: <input type="tel" id="buyertel" value="01012341234" required></label>
+            <label>이메일: <input type="email" id="buyeremail" value="test@test.com" required></label>
+            <label>상품명: <input type="text" id="goodname" value="Amond Pro 정기결제" required></label>
+        </form>
+        <button onclick="requestBillingKey()">빌링키 발급 (카드 등록)</button>
+        <div id="billingKeyResult" class="result"></div>
+    </div>
+
+    <!-- Step 2: 저장된 빌링키 정보 -->
+    <div class="section">
+        <h2>Step 2: 저장된 빌링키 정보</h2>
+        <div id="savedBillingKey" class="billing-key-info">
+            빌링키가 아직 발급되지 않았습니다.
+        </div>
+    </div>
+
+    <!-- Step 3: 빌링 승인 (정기결제) -->
+    <div class="section">
+        <h2>Step 3: 빌링 승인 (정기결제)</h2>
+        <form id="billingForm">
+            <label>결제 금액: <input type="text" id="price" value="9900" required></label>
+            <label>상품명: <input type="text" id="billGoodname" value="Amond Pro 월 정기결제" required></label>
+        </form>
+        <button onclick="processBilling()" id="billingBtn" disabled>빌링 결제 실행</button>
+        <button onclick="processBilling()" id="billingBtn2" disabled>2차 빌링 결제 실행</button>
+        <div id="billingResult" class="result"></div>
+    </div>
+
+    <!-- Hidden form for billing key registration -->
+    <form id="SendPayForm_id" name="SendPayForm_id" method="POST" style="display:none;">
+        <input type="hidden" name="version" value="1.0">
+        <input type="hidden" name="mid" value="INIBillTst">
+        <input type="hidden" name="oid" value="">
+        <input type="hidden" name="price" value="0">
+        <input type="hidden" name="timestamp" value="">
+        <input type="hidden" name="signature" value="">
+        <input type="hidden" name="mKey" value="">
+        <input type="hidden" name="currency" value="WON">
+        <input type="hidden" name="goodname" value="">
+        <input type="hidden" name="buyername" value="">
+        <input type="hidden" name="buyertel" value="">
+        <input type="hidden" name="buyeremail" value="">
+        <input type="hidden" name="returnUrl" value="">
+        <input type="hidden" name="closeUrl" value="">
+        <input type="hidden" name="gopaymethod" value="Card">
+        <input type="hidden" name="acceptmethod" value="BILLAUTH(Card)">
+        <input type="hidden" name="charset" value="UTF-8">
+        <input type="hidden" name="languageView" value="ko">
+        <input type="hidden" name="payViewType" value="popup">
+        <input type="hidden" name="popupUrl" value="">
+        <input type="hidden" name="merchantData" value="">
+    </form>
+
+    <script>
+        // 전역 변수로 빌링키 저장
+        let savedBillKey = null;
+        let savedCardInfo = null;
+
+        // SHA256 해시 함수
+        async function sha256(message) {
+            const msgBuffer = new TextEncoder().encode(message);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+            return hashHex;
+        }
+
+        // YYYYMMDDHHMMSS 형식의 timestamp 생성
+        function getFormattedTimestamp() {
+            const now = new Date();
+            const pad = (n, length) => {
+                let str = '' + n;
+                while (str.length < length) {
+                    str = '0' + str;
+                }
+                return str;
+            };
+            
+            const yyyy = now.getFullYear().toString();
+            const MM = pad(now.getMonth() + 1, 2);
+            const dd = pad(now.getDate(), 2);
+            const hh = pad(now.getHours(), 2);
+            const mm = pad(now.getMinutes(), 2);
+            const ss = pad(now.getSeconds(), 2);
+            
+            return yyyy + MM + dd + hh + mm + ss;
+        }
+
+        // Step 1: 빌링키 발급
+        async function requestBillingKey() {
+            const timestamp = Date.now().toString();
+            const formattedTimestamp = getFormattedTimestamp();
+            const oid = "BILL_" + formattedTimestamp + "_TEST";
+            const price = "0"; // 빌링키 발급은 0원
+            
+            // 사용자 정보 가져오기
+            const buyername = document.getElementById('buyername').value;
+            const buyertel = document.getElementById('buyertel').value;
+            const buyeremail = document.getElementById('buyeremail').value;
+            const goodname = document.getElementById('goodname').value;
+            
+            // 폼 값 설정
+            document.getElementsByName("oid")[0].value = oid;
+            document.getElementsByName("timestamp")[0].value = timestamp;
+            document.getElementsByName("goodname")[0].value = goodname;
+            document.getElementsByName("buyername")[0].value = buyername;
+            document.getElementsByName("buyertel")[0].value = buyertel;
+            document.getElementsByName("buyeremail")[0].value = buyeremail;
+            
+            // URL 설정 - 서버 방식으로 변경
+            const baseUrl = "http://localhost:3001";
+            document.getElementsByName("returnUrl")[0].value = baseUrl + "/billing-return";
+            document.getElementsByName("closeUrl")[0].value = baseUrl + "/billing-close.html";
+            document.getElementsByName("popupUrl")[0].value = baseUrl + "/billing-popup.html";
+            
+            // merchantData 설정
+            const merchantData = {
+                userId: "test_user_123",
+                type: "billing_key_registration"
+            };
+            document.getElementsByName("merchantData")[0].value = JSON.stringify(merchantData);
+            
+            // mKey 생성
+            const signKey = "SU5JTElURV9UUklQTEVERVNfS0VZU1RS";
+            const mKey = await sha256(signKey);
+            document.getElementsByName("mKey")[0].value = mKey;
+            
+            // signature 생성
+            const signatureData = "oid=" + oid + "&price=" + price + "&timestamp=" + timestamp;
+            const signature = await sha256(signatureData);
+            document.getElementsByName("signature")[0].value = signature;
+            
+            console.log("빌링키 발급 요청 정보:");
+            console.log("OID:", oid);
+            console.log("Timestamp:", timestamp);
+            console.log("mKey:", mKey);
+            console.log("Signature:", signature);
+            
+            document.getElementById('billingKeyResult').innerHTML = "빌링키 발급 중...";
+            
+            // INICIS 결제창 호출
+            try {
+                INIStdPay.pay('SendPayForm_id');
+            } catch (e) {
+                console.error("Error:", e);
+                alert("빌링키 발급 오류: " + e.message);
+            }
+        }
+
+        // 빌링키 발급 결과 처리 (실제로는 서버에서 처리)
+        // 테스트를 위해 수동으로 빌링키 설정하는 함수
+        function setBillingKeyManually() {
+            // 실제로는 INICIS 리턴 URL에서 받은 빌링키를 저장
+            savedBillKey = prompt("테스트용 빌링키를 입력하세요 (예: CARD_1234567890):");
+            if (savedBillKey) {
+                savedCardInfo = {
+                    cardName: "테스트카드",
+                    cardNumber: "****-****-****-1234",
+                    expireDate: "2025-12"
+                };
+                
+                document.getElementById('savedBillingKey').innerHTML = `
+                    <strong>빌링키:</strong> ${savedBillKey}<br>
+                    <strong>카드정보:</strong> ${savedCardInfo.cardName} ${savedCardInfo.cardNumber}<br>
+                    <strong>유효기간:</strong> ${savedCardInfo.expireDate}<br>
+                    <button onclick="setBillingKeyManually()">빌링키 재설정 (테스트용)</button>
+                `;
+                
+                document.getElementById('billingBtn').disabled = false;
+                document.getElementById('billingBtn2').disabled = false;
+                document.getElementById('billingKeyResult').innerHTML = "✅ 빌링키가 저장되었습니다.";
+            }
+        }
+
+        // Step 3: 빌링 승인 (정기결제)
+        let billingCount = 0;
+        async function processBilling() {
+            if (!savedBillKey) {
+                alert("먼저 빌링키를 발급받아주세요.");
+                return;
+            }
+            
+            billingCount++;
+            const price = document.getElementById('price').value;
+            const goodname = document.getElementById('billGoodname').value;
+            const timestamp = getFormattedTimestamp();
+            const moid = "BILL_PAY_" + timestamp + "_" + billingCount;
+            
+            // INICIS 빌링 API 요청 데이터
+            const billingData = {
+                mid: "INIBillTst",
+                type: "billing",
+                paymethod: "card",
+                timestamp: timestamp,
+                clientIp: "127.0.0.1",
+                moid: moid,
+                price: price,
+                billKey: savedBillKey,
+                goodName: goodname,
+                buyerName: document.getElementById('buyername').value,
+                buyerEmail: document.getElementById('buyeremail').value,
+                buyerTel: document.getElementById('buyertel').value
+            };
+            
+            document.getElementById('billingResult').innerHTML += `\n[${billingCount}차 결제 시도]\n` + 
+                JSON.stringify(billingData, null, 2) + "\n";
+            
+            // 실제로는 서버 API를 통해 빌링 처리
+            // 여기서는 데모를 위한 코드
+            try {
+                // 서버 API 호출
+                const response = await fetch('http://localhost:3001/api/billing/process', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(billingData)
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    document.getElementById('billingResult').innerHTML += 
+                        `\n✅ ${billingCount}차 결제 성공!\n결과: ` + JSON.stringify(result, null, 2) + "\n";
+                } else {
+                    throw new Error('결제 실패');
+                }
+            } catch (error) {
+                // 데모용 성공 메시지
+                document.getElementById('billingResult').innerHTML += 
+                    `\n✅ ${billingCount}차 결제 데모 완료 (실제 API 연동 필요)\n` +
+                    `주문번호: ${moid}\n` +
+                    `결제금액: ${price}원\n` +
+                    `결제시간: ${new Date().toLocaleString()}\n` +
+                    "----------------------------------------\n";
+            }
+        }
+
+        // 페이지 로드 시 초기화
+        window.onload = function() {
+            document.getElementById('savedBillingKey').innerHTML += 
+                '<br><button onclick="setBillingKeyManually()">테스트용 빌링키 수동 설정</button>';
+            
+            // 로컬 스토리지에서 빌링키 확인
+            const savedBilling = localStorage.getItem('inicis_billing_key');
+            if (savedBilling) {
+                const billingInfo = JSON.parse(savedBilling);
+                savedBillKey = billingInfo.billKey;
+                document.getElementById('savedBillingKey').innerHTML = `
+                    <strong>빌링키:</strong> ${billingInfo.billKey}<br>
+                    <strong>카드정보:</strong> ${billingInfo.cardInfo}<br>
+                    <strong>저장시간:</strong> ${new Date(billingInfo.timestamp).toLocaleString()}<br>
+                    <button onclick="clearBillingKey()">빌링키 삭제</button>
+                `;
+                document.getElementById('billingBtn').disabled = false;
+                document.getElementById('billingBtn2').disabled = false;
+            }
+        };
+        
+        // 빌링키 삭제
+        function clearBillingKey() {
+            localStorage.removeItem('inicis_billing_key');
+            savedBillKey = null;
+            location.reload();
+        }
+        
+        // 메시지 수신 (팝업에서 결과 받기)
+        window.addEventListener('message', function(event) {
+            if (event.data.type === 'billing_key_result') {
+                const params = event.data.params;
+                if (params.resultCode === '0000' && params.billKey) {
+                    savedBillKey = params.billKey;
+                    location.reload(); // 페이지 새로고침으로 빌링키 표시
+                }
+            }
+        });
+    </script>
+
+    <hr>
+    <h3>빌링 결과 수신 페이지 (별도 파일로 생성 필요)</h3>
+    <p>실제 구현 시 아래 파일들을 생성해야 합니다:</p>
+    <ul>
+        <li><code>billing-return.html</code> - 빌링키 발급 결과를 받는 페이지</li>
+        <li><code>billing-close.html</code> - INICIS 결제창 닫기 처리</li>
+        <li><code>billing-popup.html</code> - 팝업 결제창 처리</li>
+    </ul>
+</body>
+</html>
