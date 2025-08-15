@@ -7,7 +7,7 @@ import { setupExpress } from "./config/expressConfig";
 import { setupSession } from "./config/sessionConfig";
 import http from "http";
 import "./cron/imageRetry";
-import { initBillingCron } from "./jobs/billingCron";
+// import { initBillingCron } from "./jobs/billingCron"; // 구독 기능 제거로 비활성화
 
 const PORT = 9988;
 const app = express();
@@ -76,8 +76,8 @@ app.use(async (req, res, next) => {
   next();
 });
 
-// 크론 작업 초기화
-initBillingCron();
+// 크론 작업 초기화 - 구독 기능 제거로 비활성화
+// initBillingCron();
 
 // router
 import authRouter from "./router/auth";
