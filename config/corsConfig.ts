@@ -14,6 +14,9 @@ const corsOptions = {
       // AWS Amplify domains
       "https://main.dpvdj8dsmc7us.amplifyapp.com",
       "https://dpvdj8dsmc7us.amplifyapp.com",
+      // Vercel deployment domains
+      "https://amond-frontend.vercel.app",
+      "https://amond-frontend-*.vercel.app",
       // INICIS 결제 도메인들
       "https://stgstdpay.inicis.com",
       "https://stdpay.inicis.com",
@@ -35,6 +38,10 @@ const corsOptions = {
     } 
     // Check for Amplify wildcard domains
     else if (origin.match(/^https:\/\/[a-z0-9-]+\.dpvdj8dsmc7us\.amplifyapp\.com$/)) {
+      callback(null, true);
+    }
+    // Check for Vercel preview deployments
+    else if (origin.match(/^https:\/\/amond-frontend-[a-z0-9-]+\.vercel\.app$/)) {
       callback(null, true);
     } 
     else {
